@@ -51,6 +51,10 @@ def load_config():
     cfg.setdefault("claude", shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude"))
     cfg.setdefault("model", "")
     cfg.setdefault("system_prompt", DEFAULT_SYSTEM)
+    # 拡張から選べる作業フォルダ。roots の直下のフォルダと extra を一覧に出す（これ以外の場所は指定できない）
+    docs = Path.home() / "Documents"
+    cfg.setdefault("workdir_roots", [str(docs / "01_Project"), str(docs / "02_Area"), str(docs / "03_Resource")])
+    cfg.setdefault("workdir_extra", [str(docs / "00_cc")])
     if changed or not CONFIG_PATH.exists():
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -59,6 +63,84 @@ def load_config():
 
 
 CFG = load_config()
+
+
+def list_workdirs():
+    """選べる作業フォルダ [{name, path}]。毎回読み直すので、フォルダを増やせばすぐ出る"""
+    home_docs = Path.home() / "Documents"
+    out = [{"name": "youyakun 専用（既定）", "path": str(Path(CFG["workdir"]).expanduser())}]
+
+    def add(path, root=None):
+        p = Path(path).expanduser()
+        # シンボリックリンクは載せない（一覧の外の場所を指せてしまうため）
+        if p.is_symlink() or not p.is_dir():
+            return
+        p = p.resolve()
+        if root is not None and p.parent != root:
+            return
+        if any(x["path"] == str(p) for x in out):
+            return
+        try:
+            name = str(p.relative_to(home_docs))
+        except ValueError:
+            name = str(p)
+        out.append({"name": name, "path": str(p)})
+
+    for e in CFG.get("workdir_extra", []):
+        add(e)
+    for r in CFG.get("workdir_roots", []):
+        root = Path(r).expanduser()
+        try:
+            if not root.is_dir():
+                continue
+            root = root.resolve()
+            children = sorted(root.iterdir(), key=lambda c: c.name)
+        except OSError:
+            continue  # 読めないフォルダは飛ばす
+        for child in children:
+            if not child.name.startswith("."):
+                try:
+                    add(child, root)
+                except OSError:
+                    pass
+    return out
+
+
+def resolve_workdir(requested):
+    """拡張から来たパスが一覧にあるときだけ使う。空なら既定"""
+    if not requested:
+        return Path(CFG["workdir"]).expanduser()
+    for d in list_workdirs():
+        if d["path"] == requested:
+            return Path(d["path"])
+    return None
+
+
+# セッション ID → 作業フォルダ。続きを話すときに別のフォルダで --resume しないよう、ブリッジ側でも覚えておく
+SESSIONS_PATH = CONFIG_DIR / "sessions.json"
+_sessions_guard = threading.Lock()
+
+
+def _read_sessions():
+    try:
+        return json.loads(SESSIONS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def session_workdir(sid):
+    with _sessions_guard:
+        return _read_sessions().get(sid)
+
+
+def remember_session(sid, workdir):
+    with _sessions_guard:
+        data = _read_sessions()
+        data[sid] = str(workdir)
+        tmp = SESSIONS_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        tmp.replace(SESSIONS_PATH)
 
 
 def session_lock(sid):
@@ -148,10 +230,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path != "/health":
+        if self.path not in ("/health", "/workdirs"):
             return self._json(404, {"error": "not found"})
         if not self._authorized():
             return self._json(401, {"error": "トークンが違います"})
+        if self.path == "/workdirs":
+            return self._json(200, {"workdirs": list_workdirs()})
         return self._json(200, {"ok": True, "version": self.server_version, "workdir": CFG["workdir"]})
 
     # ---- 本体 ----
@@ -180,6 +264,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "session_id の形式が違います"})
         if not resume:
             sid = str(uuid.uuid4())
+        known = session_workdir(sid) if resume else None
+        if known:
+            # 続きは、セッションを始めたフォルダでしか話せない
+            if req.get("workdir") and req.get("workdir") != known:
+                return self._json(400, {"error": "このセッションは別の作業フォルダで始めたものです。「新しい会話にする」を押してください"})
+            workdir = Path(known)
+        else:
+            workdir = resolve_workdir(req.get("workdir") or "")
+            if workdir is None:
+                return self._json(400, {"error": "その作業フォルダは選べません（ブリッジの設定の一覧にありません）"})
         model = req.get("model") or ""
         if model and not re.match(r"^[A-Za-z0-9._\-\[\]]+$", model):
             return self._json(400, {"error": "model の形式が違います"})
@@ -188,7 +282,7 @@ class Handler(BaseHTTPRequestHandler):
         if not lock.acquire(blocking=False):
             return self._json(409, {"error": "このセッションはまだ返答中です"})
         try:
-            self._run_claude(sid, resume, message, req.get("name") or "", model)
+            self._run_claude(sid, resume, message, req.get("name") or "", model, workdir)
         finally:
             lock.release()
 
@@ -198,8 +292,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             self.wfile.flush()
 
-    def _run_claude(self, sid, resume, message, name, model):
-        workdir = Path(CFG["workdir"])
+    def _run_claude(self, sid, resume, message, name, model, workdir):
+        # セッションは作業フォルダごとに保存されるので、続きを話すときは同じフォルダで動かす必要がある
         workdir.mkdir(parents=True, exist_ok=True)
         cmd = build_command(sid, resume, name, model)
 
@@ -276,6 +370,8 @@ class Handler(BaseHTTPRequestHandler):
                         self._emit({"type": "delta", "text": d.get("text", "")})
                 elif t == "result":
                     got_result = True
+                    if not resume and not ev.get("is_error"):
+                        remember_session(sid, workdir)
                     self._emit({
                         "type": "done",
                         "session_id": ev.get("session_id") or sid,

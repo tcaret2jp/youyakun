@@ -34,6 +34,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     })();
     return true;
   }
+  if (msg?.type === "workdirs") {
+    (async () => {
+      const s = await settings(msg.profileId);
+      if (!s?.token) return reply({ ok: false, error: "トークンが未設定です" });
+      try {
+        const res = await fetch(base(s.bridgeUrl) + "/workdirs", { headers: { Authorization: "Bearer " + s.token } });
+        const body = await res.json().catch(() => ({}));
+        reply(res.ok ? { ok: true, workdirs: body.workdirs || [] } : { ok: false, error: body.error || `HTTP ${res.status}` });
+      } catch (e) {
+        reply({ ok: false, error: e.message });
+      }
+    })();
+    return true;
+  }
   if (msg?.type === "openOptions") chrome.runtime.openOptionsPage();
 });
 
@@ -64,6 +78,7 @@ chrome.runtime.onConnect.addListener((port) => {
           session_id: req.session_id || "",
           message: req.message,
           name: req.name || "",
+          workdir: req.workdir || "",
           model: s.model || "",
         }),
       });

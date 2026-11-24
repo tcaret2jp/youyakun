@@ -50,6 +50,8 @@
   .msg.ai code { font-family: ui-monospace, monospace; font-size:13px; }
   .typing::after { content:"▍"; animation: blink 1s steps(1) infinite; color:var(--accent); }
   @keyframes blink { 50% { opacity:0; } }
+  .wd { display:flex; gap:8px; align-items:center; color:var(--sub); font-size:12px; }
+  .wd select { flex:1; min-width:0; font-size:12px; }
   .ask { display:flex; gap:8px; align-items:flex-end; }
   textarea { flex:1; font:inherit; color:var(--ink); background:var(--bg2); border:0; border-radius:10px; padding:8px 10px; resize:vertical; min-height:38px; max-height:200px; }
   .sess { display:flex; flex-wrap:wrap; gap:8px; align-items:center; color:var(--sub); font-size:12px; }
@@ -59,7 +61,7 @@
 
   let root, els, state;
   const resetState = (videoId) => ({
-    videoId, profileId: "", profileUrl: "", info: null, transcript: null, trackIndex: 0, sessionId: "", workdir: "",
+    videoId, profileId: "", profileUrl: "", dirs: [], pickDir: "", info: null, transcript: null, trackIndex: 0, sessionId: "", workdir: "",
     messages: [], busy: false, port: null,
   });
 
@@ -95,6 +97,7 @@
           <div class="status"></div>
           <details class="tview"><summary>字幕を見る</summary><div class="segs"></div></details>
           <div class="chat"></div>
+          <div class="wd"><span>作業フォルダ</span><select class="dir"></select></div>
           <div class="ask">
             <textarea rows="1" placeholder="この動画について Claude に質問（Enter で送信、Shift+Enter で改行）"></textarea>
             <button class="btn send">送信</button>
@@ -105,7 +108,7 @@
     const q = (s) => sh.querySelector(s);
     els = {
       host, box: q(".yk"), lang: q(".lang"), prof: q(".prof"), status: q(".status"), segs: q(".segs"), tview: q(".tview"),
-      chat: q(".chat"), input: q("textarea"), send: q(".send"), sess: q(".sess"),
+      chat: q(".chat"), input: q("textarea"), dir: q(".dir"), send: q(".send"), sess: q(".sess"),
       copy: q(".copy"), copyts: q(".copyts"), sum: q(".sum"), fold: q(".fold"), gear: q(".gear"),
     };
     els.copy.onclick = () => copy(false);
@@ -121,6 +124,11 @@
     els.prof.onchange = () => {
       if (state.busy) { els.prof.value = state.profileId; return; }
       PR.setActive(els.prof.value); // storage.onChanged で切り替わる
+    };
+    els.dir.onchange = () => {
+      if (state.sessionId || state.busy) return;
+      state.pickDir = els.dir.value;
+      store.set({ ["workdir:" + state.profileId]: state.pickDir });
     };
     els.lang.onchange = () => { state.trackIndex = Number(els.lang.value); state.transcript = null; loadTranscript(); };
     els.input.addEventListener("keydown", (e) => {
@@ -149,7 +157,8 @@
     state.busy = b;
     els.sum.disabled = b;
     els.send.textContent = b ? "停止" : "送信";
-    if (!b) syncProfile(false); // 返答中に切り替えられていたら、ここで反映する
+    if (els.dir) els.dir.disabled = b || !!state.sessionId;
+    if (!b) { renderDirs(); syncProfile(false); } // 返答中に切り替えられていたら、ここで反映する
   }
 
   function renderSegments() {
@@ -173,14 +182,15 @@
       <button class="link cli">ターミナルで続けるコマンドをコピー</button>
       <button class="link reset">新しい会話にする</button>`;
     els.sess.querySelector(".cli").onclick = async () => {
-      const cmd = `cd ${state.workdir || "~/.local/share/youyakun/work"} && claude --resume ${state.sessionId}`;
+      const dir = state.workdir ? `'${state.workdir.replace(/'/g, "'\\''")}'` : "~/.local/share/youyakun/work";
+      const cmd = `cd ${dir} && claude --resume ${state.sessionId}`;
       await navigator.clipboard.writeText(cmd);
       setStatus("コピーしました: " + cmd);
     };
     els.sess.querySelector(".reset").onclick = () => {
       if (state.busy) return;
       state.sessionId = ""; state.messages = [];
-      save(); renderChat();
+      save(); renderChat(); renderDirs();
       setStatus("新しい会話にしました");
     };
   }
@@ -203,6 +213,41 @@
     state.workdir = saved?.workdir || "";
     state.messages = saved?.messages || [];
     renderChat();
+    renderDirs();
+  }
+
+  // 作業フォルダ：会話中はそのセッションのフォルダを表示して固定、新しい会話のときだけ選べる
+  function renderDirs() {
+    const dirs = state.dirs || [];
+    const locked = !!state.sessionId;
+    const want = locked ? state.workdir : state.pickDir;
+    const opts = dirs.slice();
+    if (want && !opts.some((d) => d.path === want)) opts.push({ name: want, path: want });
+    if (!opts.length) opts.push({ name: "既定（youyakun 専用）", path: "" });
+    els.dir.innerHTML = opts.map((d) => `<option value="${MD.esc(d.path)}">${MD.esc(d.name)}</option>`).join("");
+    els.dir.value = want && opts.some((d) => d.path === want) ? want : opts[0].path;
+    els.dir.disabled = locked || state.busy;
+    els.dir.title = locked ? "会話中は変えられません。「新しい会話にする」と選べます" : "Claude Code を動かすフォルダ（その CLAUDE.md が読み込まれます）";
+  }
+
+  function loadDirs() {
+    // 送信時に待てるよう、読み込み中の Promise を持っておく
+    state.dirsReady = loadDirsNow();
+    return state.dirsReady;
+  }
+
+  async function loadDirsNow() {
+    const pid = state.profileId;
+    state.dirs = []; state.pickDir = ""; // 前の接続先の選択を持ち越さない
+    const [r, picked] = await Promise.all([
+      chrome.runtime.sendMessage({ type: "workdirs", profileId: pid }).catch(() => null),
+      store.get("workdir:" + pid),
+    ]);
+    if (state.profileId !== pid) return;
+    state.dirs = r?.ok ? r.workdirs : [];
+    const p = picked["workdir:" + pid] || "";
+    state.pickDir = state.dirs.some((d) => d.path === p) ? p : state.dirs[0]?.path || "";
+    renderDirs();
   }
 
   // 表示中の接続先を、設定の「使用中」に合わせる。返答中は切り替えず、終わったときにもう一度呼ぶ
@@ -214,6 +259,7 @@
     state.profileId = p.id;
     state.profileUrl = p.url || "";
     await loadSaved();
+    loadDirs();
     if (announce) setStatus(`接続先を「${els.prof.selectedOptions[0]?.textContent || ""}」にしました`);
   }
 
@@ -313,6 +359,8 @@
       message = `${instruction}\n\n${contextBlock(tr)}`;
     }
     const resumeId = state.sessionId;
+    if (!resumeId) await state.dirsReady; // 作業フォルダの一覧が届く前に送らない
+    if (state.videoId !== id) return;
     let newId = "";
     state.messages.push({ role: "user", text: instruction, display });
     const ai = { role: "ai", text: "" };
@@ -362,7 +410,7 @@
     port.onDisconnect.addListener(() => finish(ai.text ? "接続が切れました" : "中断しました", !ai.text));
     // 自分から disconnect したときは onDisconnect が来ないので、止める処理を別に持つ
     state.stop = () => finish("止めました", false);
-    port.postMessage({ profileId: state.profileId, session_id: resumeId, message, name: `youyakun: ${state.info?.title || id}`.slice(0, 80) });
+    port.postMessage({ profileId: state.profileId, session_id: resumeId, workdir: resumeId ? state.workdir : state.pickDir, message, name: `youyakun: ${state.info?.title || id}`.slice(0, 80) });
   }
 
   // ---------- 差し込み ----------
