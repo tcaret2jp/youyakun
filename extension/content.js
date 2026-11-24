@@ -124,10 +124,6 @@
           <button class="icon fold" title="たたむ">${ICON.down}</button>
         </div>
         <div class="body">
-          <div class="env">
-            <label class="pick" title="接続先（Claude Code が動くマシン）">${ICON.server}<select class="prof"></select></label>
-            <label class="pick" title="作業フォルダ（Claude Code を動かすフォルダ。その CLAUDE.md が読み込まれます）">${ICON.folder}<select class="dir"></select></label>
-          </div>
           <div class="status"></div>
           <div class="tabs">
             <button class="tab on" data-tab="chat">チャット</button>
@@ -139,6 +135,11 @@
               <button class="icon snew" title="新しい会話">${ICON.plus}</button>
             </div>
             <div class="chat"></div>
+            <!-- 送る先（接続先と作業フォルダ）はメッセージ欄のすぐ上で選ぶ -->
+            <div class="env">
+              <label class="pick" title="接続先（Claude Code が動くマシン）">${ICON.server}<select class="prof"></select></label>
+              <label class="pick" title="作業フォルダ（Claude Code を動かすフォルダ。その CLAUDE.md が読み込まれます）">${ICON.folder}<select class="dir"></select></label>
+            </div>
             <div class="ask">
               <textarea rows="1" placeholder="この動画について質問（Enter で送信）"></textarea>
               <button class="icon primary send" title="送信">${ICON.send}</button>
