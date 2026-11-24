@@ -149,7 +149,8 @@
       const text = ev.segs.map((s) => s.utf8 || "").join("").replace(/\s+/g, " ").trim();
       if (!text) continue;
       const prev = segments[segments.length - 1];
-      if (prev && prev.text === text) continue; // 自動字幕の重複行
+      // 自動字幕の重複行（同じ文が直後に繰り返される）だけ捨てる。離れた時刻の同じ文は残す
+      if (prev && prev.text === text && (ev.tStartMs || 0) - prev.startMs < 2000) continue;
       segments.push({ startMs: ev.tStartMs || 0, text });
     }
     if (!segments.length) throw new Error("字幕ファイルに文がありません");
@@ -176,13 +177,16 @@
       const textEl = n.querySelector(".segment-text, yt-formatted-string, [class*='text']");
       const text = (textEl?.textContent || n.textContent || "").replace(/\s+/g, " ").trim();
       if (!text) continue;
+      if (!isHeader && !/\d+:\d{2}/.test(ts)) continue; // 時刻の読めない行は使わない（0:00 になるため）
       segments.push({ startMs: parseClock(ts), text: isHeader ? text : text.replace(ts.trim(), "").trim(), chapter: isHeader });
     }
     return segments.filter((s) => s.text);
   }
 
   // YouTube の文字起こしパネルは開かない（サイドバーに出てしまうため）。すでに開いているときだけ読む
-  async function viaDom() {
+  async function viaDom(videoId) {
+    // 待っている間に別の動画へ移っていたら、そのパネルは別の動画のもの
+    if (new URLSearchParams(location.search).get("v") !== videoId) throw new Error("動画が切り替わりました");
     const segs = readDomSegments();
     if (!segs.length) throw new Error("文字起こしパネルは開いていません");
     return segs;
@@ -192,7 +196,7 @@
   function askPage(videoId, fresh = false) {
     return new Promise((resolve, reject) => {
       const nonce = Math.random().toString(36).slice(2);
-      const timer = setTimeout(() => { window.removeEventListener("message", onMsg); reject(new Error("ページから応答がありません")); }, 25000);
+      const timer = setTimeout(() => { window.removeEventListener("message", onMsg); reject(new Error("ページから応答がありません")); }, 35000);
       function onMsg(ev) {
         const d = ev.data;
         if (ev.source !== window || !d || d.src !== "youyakun-page" || d.nonce !== nonce) return;
@@ -201,7 +205,8 @@
         d.url ? resolve(d.url) : reject(new Error(d.error || "字幕の URL がありません"));
       }
       window.addEventListener("message", onMsg);
-      window.postMessage({ src: "youyakun-cs", type: "potUrl", videoId, nonce, fresh }, location.origin);
+      // 期限を過ぎた依頼では、ページ側は字幕に触らない
+      window.postMessage({ src: "youyakun-cs", type: "potUrl", videoId, nonce, fresh, deadline: Date.now() + 30000 }, location.origin);
     });
   }
 
@@ -248,7 +253,8 @@
       };
     });
     cache.set(videoId, p);
-    p.catch(() => cache.delete(videoId));
+    // 失敗や字幕 0 件はキャッシュしない（次に押したときに読み直す）
+    p.then((i) => { if (!i.tracks.length) cache.delete(videoId); }, () => cache.delete(videoId));
     return p;
   }
 
@@ -258,6 +264,68 @@
     if (i >= 0) return i;
     const j = tracks.findIndex((t) => t.languageCode.startsWith("ja"));
     return j >= 0 ? j : 0;
+  }
+
+  // ---- get_panel（YouTube 公式の文字起こしパネルと同じ API）----
+  // 認証なしで取れて、プレイヤーの字幕設定にも触れない。ただし言語は YouTube が 1 つ選ぶ（手動字幕が優先）
+  function panelParams(videoId) {
+    // protobuf: field 149 { 1: videoId, 3: 1 }
+    const enc = new TextEncoder().encode(videoId);
+    const varint = (n) => { const o = []; while (n > 127) { o.push((n & 127) | 128); n >>>= 7; } o.push(n); return o; };
+    const inner = [0x0a, ...varint(enc.length), ...enc, 0x18, 0x01];
+    const outer = [...varint((149 << 3) | 2), ...varint(inner.length), ...inner];
+    return btoa(String.fromCharCode(...outer));
+  }
+
+  function clientVersion(data) {
+    return data?.context?.client?.clientVersion
+      || (document.documentElement.innerHTML.match(/"INNERTUBE_CLIENT_VERSION":"([^"]+)"/) || [])[1]
+      || "2.20261123.00.00";
+  }
+
+  async function viaPanel(data, videoId) {
+    const res = await fetch("https://www.youtube.com/youtubei/v1/get_panel?prettyPrint=false", {
+      method: "POST",
+      credentials: "omit",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        context: { client: { clientName: "WEB", clientVersion: clientVersion(data), hl: "ja", gl: "JP" } },
+        panelId: "PAmodern_transcript_view",
+        params: panelParams(videoId),
+      }),
+    });
+    if (!res.ok) throw new Error(`get_panel ${res.status}`);
+    const json = await res.json();
+    const segments = [];
+    (function walk(o) {
+      if (!o || typeof o !== "object") return;
+      if (Array.isArray(o)) { o.forEach(walk); return; }
+      if (o.timelineChapterViewModel) {
+        const t = textOf(o.timelineChapterViewModel.title) || o.timelineChapterViewModel.headline?.content || "";
+        const ts = o.timelineChapterViewModel.timestamp;
+        if (t) segments.push({ startMs: parseClock(ts || "0:00"), text: t, chapter: true });
+      }
+      if (o.transcriptSegmentViewModel) {
+        const v = o.transcriptSegmentViewModel;
+        const text = textOf(v.simpleText || v.text).replace(/\s+/g, " ").trim();
+        if (text && /\d+:\d{2}/.test(v.timestamp || "")) segments.push({ startMs: parseClock(v.timestamp), text });
+        return;
+      }
+      for (const k in o) walk(o[k]);
+    })(json);
+    if (!segments.some((x) => !x.chapter)) throw new Error("文字起こしが空でした");
+    return segments;
+  }
+
+  // 日本語の字幕かどうか（かな・漢字の割合で見る）
+  function looksJapanese(segments) {
+    const text = segments.filter((x) => !x.chapter).slice(0, 80).map((x) => x.text).join("");
+    const chars = text.replace(/\s/g, "");
+    if (!chars) return false;
+    const ja = (chars.match(/[\u3040-\u30ff\u4e00-\u9fff]/g) || []).length;
+    const kana = (chars.match(/[\u3040-\u30ff]/g) || []).length;
+    // 漢字だけなら中国語の可能性があるので、かなが入っていることも条件にする
+    return ja / chars.length > 0.3 && kana / chars.length > 0.05;
   }
 
   async function getTranscript(videoId, trackIndex = null) {
@@ -275,17 +343,38 @@
     if (trackIndex == null) trackIndex = defaultTrackIndex(info.tracks);
     const track = info.tracks[trackIndex];
     const tries = [];
+    // ① get_panel：字幕設定に触れない。返ってきた言語が欲しい言語のときだけ採用する
+    let panelSegs = null;
+    try {
+      panelSegs = await viaPanel(info.data, videoId);
+    } catch (e) {
+      errors.push(`panel: ${e.message}`);
+    }
+    if (panelSegs) {
+      const ja = looksJapanese(panelSegs);
+      const wantJa = !track || track.languageCode.startsWith("ja");
+      const nonJaTracks = info.tracks.filter((t) => !t.languageCode.startsWith("ja"));
+      // 日本語が欲しくて日本語が来た／日本語以外が欲しくて、日本語以外の字幕が 1 つしかない
+      if ((wantJa && ja) || (!wantJa && !ja && nonJaTracks.length === 1) || !info.tracks.length) {
+        const label = ja ? info.tracks.find((t) => t.languageCode.startsWith("ja")) || track : track;
+        return { ...info, segments: panelSegs, source: "panel", track: label || null };
+      }
+      errors.push("panel: 欲しい言語ではありませんでした");
+    }
+    // ② プレイヤー経由：字幕を一瞬オンにする（YouTube の字幕設定は保存して元に戻す）
     if (onPage && track) tries.push(["player", () => viaPlayer(videoId, track)]);
     if (info.data.player) {
       tries.push(["innertube", () => viaInnertube(info.data, track)]);
       tries.push(["timedtext", () => viaTimedtext(track)]);
     }
     // ページのパネルは表示中の動画のときだけ使える（言語はパネルで選ばれているもの）
-    if (onPage) tries.push(["dom", viaDom]);
+    if (onPage) tries.push(["dom", () => viaDom(videoId)]);
+    // 欲しい言語でなくても、何もないよりは YouTube が選んだ字幕を使う
+    if (panelSegs) tries.push(["panel", async () => panelSegs]);
     for (const [source, fn] of tries) {
       try {
         const segments = await fn();
-        return { ...info, segments, source, track: source === "dom" ? null : track };
+        return { ...info, segments, source, track: source === "dom" || source === "panel" ? null : track };
       } catch (e) {
         errors.push(`${source}: ${e.message}`);
       }
