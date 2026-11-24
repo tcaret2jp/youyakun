@@ -38,28 +38,45 @@
     const stale = fresh ? seen.get(videoId) || null : null;
     if (fresh) seen.delete(videoId);
     else if (seen.get(videoId) || fromPerformance(videoId)) return seen.get(videoId);
-    const p = document.getElementById("movie_player");
-    if (!p?.getVideoData || p.getVideoData().video_id !== videoId) throw new Error("プレイヤーが別の動画です");
+    // 開いた直後はプレイヤーがまだないことがあるので、少し待つ
+    let p = null;
+    for (let i = 0; i < 25; i++) {
+      p = document.getElementById("movie_player");
+      if (p?.getVideoData && p.getVideoData().video_id === videoId) break;
+      p = null;
+      await sleep(200);
+    }
+    if (!p) throw new Error("プレイヤーが別の動画です");
     // 字幕を一瞬だけオンにして、プレイヤーに字幕ファイルを読み込ませる
     let before = null;
     try { before = p.getOption("captions", "track"); } catch {}
     const wasOn = !!before?.languageCode;
     let setTo = null;
+    // プレイヤーの準備ができる前（読み込み直後）は字幕の指示が無視されるので、取れるまで繰り返す
+    const kick = () => {
+      try {
+        p.loadModule?.("captions");
+        if (!wasOn) {
+          // 待っている間にユーザーが自分で字幕を選んでいたら、もう触らない
+          const cur = p.getOption("captions", "track")?.languageCode || null;
+          if (setTo && cur && cur !== setTo) return;
+          const list = p.getOption("captions", "tracklist") || [];
+          // モジュールの読み込み直後は一覧が空のことがあるので、動画情報の字幕一覧も見る
+          const code = p.getPlayerResponse?.()?.captions?.playerCaptionsTracklistRenderer?.captionTracks?.[0]?.languageCode;
+          const first = list[0] || (code ? { languageCode: code } : null);
+          if (first) { p.setOption("captions", "track", first); setTo = first.languageCode; }
+        } else {
+          p.setOption("captions", "reload", true);
+        }
+      } catch {}
+    };
     try {
-      p.loadModule?.("captions");
-      if (!wasOn) {
-        const list = p.getOption("captions", "tracklist") || [];
-        // モジュールの読み込み直後は一覧が空のことがあるので、動画情報の字幕一覧も見る
-        const code = p.getPlayerResponse?.()?.captions?.playerCaptionsTracklistRenderer?.captionTracks?.[0]?.languageCode;
-        const first = list[0] || (code ? { languageCode: code } : null);
-        if (first) { p.setOption("captions", "track", first); setTo = first.languageCode; }
-      } else {
-        p.setOption("captions", "reload", true);
-      }
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 75; i++) { // 最大 15 秒
+        if (i % 4 === 0) kick();
         await sleep(200);
         const got = fresh ? seen.get(videoId) : seen.get(videoId) || fromPerformance(videoId);
         if (got && got !== stale) break;
+        if (p.getVideoData?.().video_id !== videoId) break;
       }
     } finally {
       // 自分でオンにしたときだけ戻す。待っている間に動画が変わったり、ユーザーが字幕を切り替えたりしていたら触らない

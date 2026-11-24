@@ -192,7 +192,7 @@
   function askPage(videoId, fresh = false) {
     return new Promise((resolve, reject) => {
       const nonce = Math.random().toString(36).slice(2);
-      const timer = setTimeout(() => { window.removeEventListener("message", onMsg); reject(new Error("ページから応答がありません")); }, 9000);
+      const timer = setTimeout(() => { window.removeEventListener("message", onMsg); reject(new Error("ページから応答がありません")); }, 25000);
       function onMsg(ev) {
         const d = ev.data;
         if (ev.source !== window || !d || d.src !== "youyakun-page" || d.nonce !== nonce) return;
@@ -208,8 +208,10 @@
   // プレイヤーの字幕 URL の言語だけ差し替えて、好きな言語の字幕を読む
   async function viaPlayer(videoId, track) {
     if (!track) throw new Error("字幕の言語がありません");
+    let gotUrl = false;
     const once = async (fresh) => {
       const u = new URL(await askPage(videoId, fresh));
+      gotUrl = true;
       // ページ側の応答は信用しきらない：YouTube の字幕ファイルで、この動画のものだけ使う
       if (u.origin !== "https://www.youtube.com" || u.pathname !== "/api/timedtext" || u.searchParams.get("v") !== videoId) {
         throw new Error("字幕の URL が不正です");
@@ -223,7 +225,8 @@
     };
     try {
       return await once(false);
-    } catch {
+    } catch (e) {
+      if (!gotUrl) throw e; // URL 自体が取れなかったときは、待ち直しても同じなのでやめる
       return await once(true); // URL の期限切れなどで空なら、プレイヤーに読み込み直させてもう一度
     }
   }
