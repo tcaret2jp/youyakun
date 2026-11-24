@@ -58,6 +58,9 @@
   .msg.ai code { font-family: ui-monospace, monospace; font-size:13px; }
   .typing::after { content:"▍"; animation: blink 1s steps(1) infinite; color:var(--accent); }
   @keyframes blink { 50% { opacity:0; } }
+  .sbar { display:flex; gap:8px; align-items:center; }
+  .sbar select { flex:1; min-width:0; font-size:12px; }
+  button.small { padding:4px 12px; font-size:12px; }
   .wd { display:flex; gap:8px; align-items:center; color:var(--sub); font-size:12px; }
   .wd select { flex:1; min-width:0; font-size:12px; }
   .ask { display:flex; gap:8px; align-items:flex-end; }
@@ -69,7 +72,7 @@
 
   let root, els, state;
   const resetState = (videoId) => ({
-    videoId, profileId: "", profileUrl: "", dirs: [], pickDir: "", info: null, transcript: null, trackIndex: null, sessionId: "", workdir: "",
+    videoId, sessions: [], loadingSaved: false, profileId: "", profileUrl: "", dirs: [], pickDir: "", info: null, transcript: null, trackIndex: null, sessionId: "", workdir: "",
     messages: [], busy: false, port: null,
   });
 
@@ -80,7 +83,8 @@
   const PR = globalThis.YouyakunProfiles;
   // 会話は「接続先 × 動画」ごとに保存する（セッションはブリッジのマシンにあるため）
   // URL も鍵に含める：同じ接続先の URL を別のマシンに変えたら、前のマシンのセッションは使わない
-  const key = (id) => `video:${state.profileId}|${state.profileUrl}:${id}`;
+  const keyOf = (st, id = st.videoId) => `video:${st.profileId}|${st.profileUrl}:${id}`;
+  const key = (id) => keyOf(state, id);
 
   // ---------- 画面 ----------
   function build() {
@@ -108,6 +112,10 @@
             <button class="tab" data-tab="tr">字幕<span class="cnt"></span></button>
           </div>
           <div class="pane pane-chat">
+            <div class="sbar">
+              <select class="ssel" title="この動画での会話"></select>
+              <button class="btn small snew">＋ 新しい会話</button>
+            </div>
             <div class="chat"></div>
             <div class="wd"><span>作業フォルダ</span><select class="dir"></select></div>
             <div class="ask">
@@ -126,7 +134,7 @@
     els = {
       host, box: q(".yk"), lang: q(".lang"), prof: q(".prof"), status: q(".status"), segs: q(".segs"), tstatus: q(".tstatus"), cnt: q(".tab .cnt"),
       tabs: [...sh.querySelectorAll(".tab")], paneChat: q(".pane-chat"), paneTr: q(".pane-tr"),
-      chat: q(".chat"), input: q("textarea"), dir: q(".dir"), send: q(".send"), sess: q(".sess"),
+      chat: q(".chat"), input: q("textarea"), dir: q(".dir"), ssel: q(".ssel"), snew: q(".snew"), send: q(".send"), sess: q(".sess"),
       copy: q(".copy"), copyts: q(".copyts"), sum: q(".sum"), fold: q(".fold"), gear: q(".gear"),
     };
     els.copy.onclick = () => copy(false);
@@ -143,6 +151,8 @@
       if (state.busy) { els.prof.value = state.profileId; return; }
       PR.setActive(els.prof.value); // storage.onChanged で切り替わる
     };
+    els.snew.onclick = () => newConversation();
+    els.ssel.onchange = () => switchSession(els.ssel.value);
     els.dir.onchange = () => {
       if (state.sessionId || state.busy) return;
       state.pickDir = els.dir.value;
@@ -182,6 +192,7 @@
     els.sum.disabled = b;
     els.send.textContent = b ? "停止" : "送信";
     if (els.dir) els.dir.disabled = b || !!state.sessionId;
+    if (els.ssel) { els.ssel.disabled = b || els.ssel.options.length < 2; els.snew.disabled = b || !state.sessionId; }
     if (!b) { renderDirs(); syncProfile(false); } // 返答中に切り替えられていたら、ここで反映する
   }
 
@@ -203,20 +214,55 @@
   function renderSession() {
     if (!state.sessionId) { els.sess.innerHTML = ""; return; }
     els.sess.innerHTML = `<span>セッション ${state.sessionId.slice(0, 8)}</span>
-      <button class="link cli">ターミナルで続けるコマンドをコピー</button>
-      <button class="link reset">新しい会話にする</button>`;
+      <button class="link cli">ターミナルで続けるコマンドをコピー</button>`;
     els.sess.querySelector(".cli").onclick = async () => {
       const dir = state.workdir ? `'${state.workdir.replace(/'/g, "'\\''")}'` : "~/.local/share/youyakun/work";
       const cmd = `cd ${dir} && claude --resume ${state.sessionId}`;
       await navigator.clipboard.writeText(cmd);
       setStatus("コピーしました: " + cmd);
     };
-    els.sess.querySelector(".reset").onclick = () => {
-      if (state.busy) return;
-      state.sessionId = ""; state.messages = [];
-      save(); renderChat(); renderDirs();
-      setStatus("新しい会話にしました");
-    };
+  }
+
+  // ---------- 動画ごとの会話（セッション）の一覧 ----------
+  // 保存形式: { current: セッション ID（"" は未送信の新しい会話）, sessions: [{ sid, workdir, messages, title, at }] }
+  const MAX_SESSIONS = 20;
+
+  function sessionTitle(x) {
+    const d = new Date(x.at || Date.now());
+    const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return `${(x.title || "会話").slice(0, 24)}（${when}）`;
+  }
+
+  function renderSessions() {
+    const list = state.sessions || [];
+    const opts = list.map((x) => `<option value="${MD.esc(x.sid)}">${MD.esc(sessionTitle(x))}</option>`);
+    if (!state.sessionId) opts.push(`<option value="">新しい会話（まだ送っていません）</option>`);
+    els.ssel.innerHTML = opts.join("");
+    els.ssel.value = state.sessionId || "";
+    els.ssel.disabled = state.busy || state.loadingSaved || opts.length < 2;
+    els.snew.disabled = state.busy || state.loadingSaved || !state.sessionId; // すでに新しい会話なら押せない
+  }
+
+  function useEntry(x) {
+    state.sessionId = x ? x.sid : "";
+    state.workdir = x ? x.workdir || "" : "";
+    state.messages = x ? (x.messages || []).slice() : [];
+    renderChat(); renderDirs(); renderSessions();
+  }
+
+  function newConversation() {
+    if (state.busy || state.loadingSaved || !state.sessionId) return;
+    useEntry(null);
+    save();
+    setStatus("新しい会話にしました（前の会話は上のメニューから戻れます）");
+  }
+
+  function switchSession(sid) {
+    if (state.busy || state.loadingSaved) { renderSessions(); return; }
+    const x = (state.sessions || []).find((e) => e.sid === sid);
+    if (!x) { renderSessions(); return; }
+    useEntry(x);
+    save();
   }
 
   async function renderProfiles() {
@@ -229,15 +275,31 @@
 
   // 今使っている接続先の会話を読み込む。待っている間に動画や接続先が変わったら捨てる
   async function loadSaved() {
+    const st = state;
+    st.loadingSaved = true; // 読み込み中は送信・会話の切り替えをしない
+    renderSessions();
     const id = state.videoId;
     const k = key(id);
     const saved = (await store.get(k))[k];
     if (state.videoId !== id || key(id) !== k) return;
-    state.sessionId = UUID_RE.test(saved?.sessionId || "") ? saved.sessionId : "";
-    state.workdir = saved?.workdir || "";
-    state.messages = saved?.messages || [];
-    renderChat();
-    renderDirs();
+    if (state !== st) return;
+    const { sessions, current } = readSaved(saved);
+    state.sessions = sessions;
+    useEntry(sessions.find((x) => x.sid === current) || null);
+    state.loadingSaved = false;
+    renderSessions();
+  }
+
+  function readSaved(saved) {
+    let sessions = Array.isArray(saved?.sessions) ? saved.sessions : [];
+    let current = saved?.current ?? "";
+    if (!saved?.sessions && UUID_RE.test(saved?.sessionId || "")) {
+      // 1 動画 1 会話だった頃の保存形式から移す
+      const first = (saved.messages || []).find((m) => m.role === "user");
+      sessions = [{ sid: saved.sessionId, workdir: saved.workdir || "", messages: saved.messages || [], title: first?.display || first?.text || "会話", at: saved.at || Date.now() }];
+      current = saved.sessionId;
+    }
+    return { sessions: sessions.filter((x) => UUID_RE.test(x?.sid || "")), current };
   }
 
   // 作業フォルダ：会話中はそのセッションのフォルダを表示して固定、新しい会話のときだけ選べる
@@ -261,13 +323,14 @@
   }
 
   async function loadDirsNow() {
-    const pid = state.profileId;
+    const st = state;
+    const pid = state.profileId, purl = state.profileUrl;
     state.dirs = []; state.pickDir = ""; // 前の接続先の選択を持ち越さない
     const [r, picked] = await Promise.all([
       chrome.runtime.sendMessage({ type: "workdirs", profileId: pid }).catch(() => null),
       store.get("workdir:" + pid),
     ]);
-    if (state.profileId !== pid) return;
+    if (state !== st || st.profileId !== pid || st.profileUrl !== purl) return; // 古い読み込み結果は使わない
     state.dirs = r?.ok ? r.workdirs : [];
     const p = picked["workdir:" + pid] || "";
     state.pickDir = state.dirs.some((d) => d.path === p) ? p : state.dirs[0]?.path || "";
@@ -291,8 +354,32 @@
     if (area === "local" && (ch.profiles || ch.activeProfile)) syncProfile();
   });
 
-  function save() {
-    store.set({ [key(state.videoId)]: { sessionId: state.sessionId, workdir: state.workdir, messages: state.messages.slice(-40), at: Date.now() } });
+  // 保存は 1 本ずつ順番に行い、毎回ストレージの最新を読んでから、この会話の分だけ書き換える
+  // （同じ動画を別のタブで開いていても、ほかの会話を消さないため）
+  let saveChain = Promise.resolve();
+  function save(st = state) {
+    if (!st.videoId) return;
+    const k = keyOf(st);
+    const sid = st.sessionId;
+    const entry = sid ? { sid, workdir: st.workdir, messages: st.messages.slice(-40) } : null;
+    saveChain = saveChain.then(async () => {
+      const { sessions: list } = readSaved((await store.get(k))[k]);
+      if (entry) {
+        let x = list.find((e) => e.sid === sid);
+        if (!x) {
+          const first = entry.messages.find((m) => m.role === "user");
+          x = { sid, title: first?.display || first?.text || "会話" };
+          list.push(x);
+          while (list.length > MAX_SESSIONS) list.shift(); // 古いものから消す
+        }
+        Object.assign(x, { workdir: entry.workdir, messages: entry.messages, at: Date.now() });
+      }
+      await store.set({ [k]: { current: sid, sessions: list } });
+      if (state === st && keyOf(st) === k) { st.sessions = list; renderSessions(); }
+    }).catch((e) => {
+      if (state === st) setStatus("会話を保存できませんでした（ブラウザの保存容量を確認してください）: " + e.message, true);
+    });
+    return saveChain;
   }
 
   // ---------- 字幕 ----------
@@ -419,8 +506,10 @@
   // ---------- Claude ----------
   async function summarize() {
     const st = state;
+    const sid = st.sessionId, k = keyOf(st);
     const { promptTemplate } = await chrome.storage.local.get("promptTemplate");
-    if (state !== st || !st.videoId) return; // 待っている間に別の動画へ移った
+    // 待っている間に動画・接続先・会話が変わったら送らない
+    if (state !== st || !st.videoId || st.sessionId !== sid || keyOf(st) !== k) return;
     ask(promptTemplate || DEFAULT_PROMPT, "要約して");
   }
 
@@ -434,7 +523,7 @@
   }
 
   async function ask(instruction, display) {
-    if (state.busy) return;
+    if (state.busy || state.loadingSaved || !state.videoId) return false;
     showTab("chat");
     setBusy(true); // 字幕の読み込み中に二重に送られないよう、先に立てる
     const st = state;
@@ -452,7 +541,8 @@
     }
     const resumeId = st.sessionId;
     let newId = "";
-    state.messages.push({ role: "user", text: instruction, display });
+    const userMsg = { role: "user", text: instruction, display };
+    state.messages.push(userMsg);
     const ai = { role: "ai", text: "" };
     state.messages.push(ai);
     renderChat();
@@ -466,12 +556,18 @@
     let raf = 0;
     const paint = () => { raf = 0; bubble.innerHTML = MD.render(ai.text); els.chat.scrollTop = els.chat.scrollHeight; };
     const finish = (statusText, err) => {
-      if (state.port !== port) return;
-      state.port = null;
+      if (st.port !== port) return;
+      st.port = null;
       bubble.classList.remove("typing");
-      if (!ai.text) state.messages.splice(state.messages.indexOf(ai), 1);
-      setBusy(false);
-      if (state.videoId === id) { save(); renderChat(); setStatus(statusText, err); }
+      if (!ai.text) st.messages.splice(st.messages.indexOf(ai), 1);
+      if (!resumeId && !st.sessionId) {
+        // 新しい会話の 1 通目が失敗した：その試行は履歴に残さない（次の会話に混ざらないように）
+        const i = st.messages.indexOf(userMsg);
+        if (i >= 0) st.messages.splice(i);
+      } else {
+        save(st); // 返答の途中で動画を移っても、始めた会話に保存する
+      }
+      if (state === st) { setBusy(false); renderChat(); setStatus(statusText, err); }
       try { port.disconnect(); } catch {}
     };
     port.onMessage.addListener((m) => {
@@ -487,7 +583,7 @@
         if (m.result && m.result.length >= ai.text.length) ai.text = m.result;
         if (!m.is_error && !resumeId) {
           const sid = UUID_RE.test(m.session_id || "") ? m.session_id : newId;
-          if (sid && state.videoId === id) state.sessionId = sid;
+          if (sid) st.sessionId = sid;
         }
         const cost = m.cost_usd != null ? `（$${Number(m.cost_usd).toFixed(3)}）` : "";
         finish(m.is_error ? "Claude がエラーを返しました" : `完了 ${cost}`, m.is_error);
@@ -521,6 +617,7 @@
       state?.stop?.();
       state = resetState(id);
       els.chat.innerHTML = ""; els.segs.innerHTML = ""; els.lang.innerHTML = ""; setStatus(""); setBusy(false);
+      renderSessions(); // 前の動画の会話一覧を消す
       setTStatus("");
       els.box.classList.toggle("dark", isDark());
       await syncProfile(false);
