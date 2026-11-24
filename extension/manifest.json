@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "youyakun",
+  "version": "0.1.0",
+  "description": "YouTube の字幕を一括コピーし、Claude Code に渡して要約・質問できる拡張機能",
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.youtube.com/*"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["profiles.js", "transcript.js", "markdown.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html",
+  "action": { "default_title": "youyakun の設定" }
+}
