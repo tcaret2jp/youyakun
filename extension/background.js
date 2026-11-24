@@ -65,6 +65,11 @@ chrome.runtime.onConnect.addListener((port) => {
       send({ type: "error", message: "この会話の接続先が見つかりません。「新しい会話にする」を押してください" });
       return;
     }
+    // パネルが表示している接続先と、設定の今の URL が食い違ったら送らない（送る途中で設定画面から変えられたとき）
+    if (req.profileUrl != null && base(req.profileUrl || P.DEFAULT_URL) !== base(s.bridgeUrl)) {
+      send({ type: "error", message: "送る途中で接続先の URL が変わったので送りませんでした。もう一度送ってください" });
+      return;
+    }
     if (!s.token) {
       send({ type: "error", message: `接続先「${s.name}」のトークンを設定画面で入れてください`, needsSetup: true });
       return;

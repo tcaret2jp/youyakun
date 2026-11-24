@@ -31,11 +31,6 @@
   .pick select:disabled { opacity:.6; }
   .body { padding:0 14px 14px; display:flex; flex-direction:column; gap:10px; }
   .collapsed .body { display:none; }
-  .row { display:flex; flex-wrap:wrap; gap:8px; }
-  button.btn { font:inherit; font-weight:500; border:0; border-radius:999px; padding:7px 14px; cursor:pointer;
-               background:var(--bg2); color:var(--ink); }
-  button.btn:hover { filter:brightness(.95); }
-  button.primary { background:var(--accent); color:var(--accent-ink); }
   button:disabled { opacity:.5; cursor:default; }
   .status { color:var(--sub); font-size:12px; white-space:pre-wrap; }
   .status.err { color:#cc0000; }
@@ -67,7 +62,6 @@
   @keyframes blink { 50% { opacity:0; } }
   .sbar { display:flex; gap:8px; align-items:center; }
   .sbar select { flex:1; min-width:0; font-size:12px; }
-  button.small { padding:4px 12px; font-size:12px; }
   .ask { display:flex; gap:8px; align-items:flex-end; }
   textarea { flex:1; font:inherit; color:var(--ink); background:var(--bg2); border:0; border-radius:10px; padding:8px 10px; resize:vertical; min-height:38px; max-height:200px; }
   .sess { display:flex; flex-wrap:wrap; gap:8px; align-items:center; color:var(--sub); font-size:12px; }
@@ -94,7 +88,7 @@
 
   let root, els, state;
   const resetState = (videoId) => ({
-    videoId, sessions: [], loadingSaved: false, profileId: "", profileUrl: "", dirs: [], pickDir: "", info: null, transcript: null, trackIndex: null, sessionId: "", workdir: "",
+    videoId, sessions: [], loadingSaved: false, profileId: "", profileUrl: "", profileTok: "", loadErr: false, switching: !!videoId, syncChain: null, dirs: [], pickDir: "", info: null, transcript: null, trackIndex: null, sessionId: "", workdir: "",
     messages: [], busy: false, port: null,
   });
 
@@ -105,6 +99,7 @@
   const PR = globalThis.YouyakunProfiles;
   // 会話は「接続先 × 動画」ごとに保存する（セッションはブリッジのマシンにあるため）
   // URL も鍵に含める：同じ接続先の URL を別のマシンに変えたら、前のマシンのセッションは使わない
+  const LOAD_ERR = "保存データ（会話履歴・作業フォルダ）を読めませんでした。YouTube のタブを再読み込みしてください";
   const keyOf = (st, id = st.videoId) => `video:${st.profileId}|${st.profileUrl}:${id}`;
   const key = (id) => keyOf(state, id);
 
@@ -180,9 +175,16 @@
         return;
       }
       if (state.busy || !state.videoId) { els.prof.value = state.profileId; return; }
-      state.switching = true; // 切り替えが反映されるまで送信しない
+      const st = state;
+      st.switching = true; // 切り替えが反映されるまで送信しない
       setBusyControls();
-      PR.setActive(els.prof.value).then(() => syncProfile()); // 反映して、会話とフォルダを読み直す
+      PR.setActive(els.prof.value).then(() => syncProfile(), (e) => { // 反映して、会話とフォルダを読み直す
+        if (state !== st) return; // 別の動画へ移っていたら、その動画には関係ない
+        st.switching = false;
+        els.prof.value = st.profileId;
+        setBusyControls();
+        setStatus("接続先を切り替えられませんでした: " + (e?.message || e), true);
+      });
     };
     els.snew.onclick = () => newConversation();
     els.ssel.onchange = () => switchSession(els.ssel.value);
@@ -233,16 +235,20 @@
     els.prof.disabled = lock;
     els.dir.disabled = lock || !!(state.loadingSaved || state.dirsLoading);
     els.sum.disabled = lock;
+    els.send.disabled = !state.busy && !!state.switching; // 返答中は「止める」として押せるようにする
   }
 
   function setBusy(b) {
     state.busy = b;
-    els.sum.disabled = b;
     els.send.innerHTML = b ? ICON.stop : ICON.send;
     els.send.title = b ? "止める" : "送信";
     setBusyControls();
     if (els.ssel) { els.ssel.disabled = b || els.ssel.options.length < 2; els.snew.disabled = b || !state.sessionId; }
-    if (!b) { renderDirs(); syncProfile(false); } // 返答中に切り替えられていたら、ここで反映する
+    if (!b) {
+      // 返答中に接続先が切り替えられていたら、ここで反映する。反映が終わるまでは次を送らない
+      if (state.videoId) { state.switching = true; setBusyControls(); }
+      renderDirs(); syncProfile(false);
+    }
   }
 
   function renderSegments() {
@@ -314,8 +320,10 @@
     save();
   }
 
-  async function renderProfiles() {
+  // st を渡したときは、読み込みの間に別の動画へ移っていたら表示を書き換えずに null を返す
+  async function renderProfiles(st) {
     const { profiles, activeProfile } = await PR.load();
+    if (st && state !== st) return null;
     els.prof.innerHTML = profiles.map((p) => `<option value="${MD.esc(p.id)}">${MD.esc(p.name || "（名前なし）")}</option>`).join("")
       + (profiles.length ? "" : `<option value="">接続先が未設定です</option>`)
       + `<option value="__add">＋ 接続先を追加・編集…</option>`;
@@ -330,7 +338,8 @@
     renderSessions();
     const id = state.videoId;
     const k = key(id);
-    const saved = (await store.get(k))[k];
+    // 読めなかったときは「履歴なし」と取り違えないよう、送信を止めて知らせる
+    const saved = (await store.get(k).catch(() => { st.loadErr = true; return {}; }))[k];
     if (state.videoId !== id || key(id) !== k) return;
     if (state !== st) return;
     const { sessions, current } = readSaved(saved);
@@ -384,7 +393,7 @@
     state.dirs = []; state.pickDir = ""; // 前の接続先の選択を持ち越さない
     const [r, picked] = await Promise.all([
       chrome.runtime.sendMessage({ type: "workdirs", profileId: pid }).catch(() => null),
-      store.get("workdir:" + pid),
+      store.get("workdir:" + pid).catch(() => { st.loadErr = true; return {}; }), // 既定フォルダと取り違えないように
     ]);
     if (state !== st || st.profileId !== pid || st.profileUrl !== purl) return; // 古い読み込み結果は使わない
     st.dirsLoading = false;
@@ -395,14 +404,36 @@
   }
 
   // 表示中の接続先を、設定の「使用中」に合わせる。返答中は切り替えず、終わったときにもう一度呼ぶ
-  async function syncProfile(announce = true) {
-    if (!els || !state?.videoId) return;
-    const p = await renderProfiles();
-    if (state.busy) { els.prof.value = state.profileId; return; }
+  // 同じ動画の中では 1 本ずつ順に処理する（先の処理が終わる前に後の処理が切り替え中の印を消さないように）。
+  // 動画ごとに列を分けるので、前の動画の遅い読み込みを新しい動画が待つことはない
+  function syncProfile(announce = true) {
     const st = state;
-    if (p.id === st.profileId && (p.url || "") === st.profileUrl) { st.switching = false; setBusyControls(); return; }
+    if (!st) return Promise.resolve();
+    const run = (st.syncChain || Promise.resolve()).then(() => syncProfileNow(announce, st));
+    st.syncChain = run.catch((e) => {
+      // 読み込みに失敗しても、操作が止まったままにならないようにする
+      if (state === st) { st.switching = false; setBusyControls(); setStatus("接続先を読み込めませんでした: " + (e?.message || e), true); }
+    });
+    return st.syncChain;
+  }
+
+  async function syncProfileNow(announce, st) {
+    if (!els || state !== st || !st.videoId) return;
+    const p = await renderProfiles(st);
+    if (!p || state !== st) return;
+    if (st.busy) { els.prof.value = st.profileId; return; }
+    if (p.id === st.profileId && (p.url || "") === st.profileUrl) {
+      if ((p.token || "") !== st.profileTok) { // トークンだけ直されたときは、フォルダ一覧を取り直す
+        st.profileTok = p.token || "";
+        await loadDirs();
+        if (state !== st) return;
+      }
+      st.switching = false; setBusyControls(); return;
+    }
+    st.switching = true; setBusyControls(); // 設定画面から変えられたときも、読み込み終わるまで送らない
     st.profileId = p.id;
     st.profileUrl = p.url || "";
+    st.profileTok = p.token || "";
     st.dirs = []; st.pickDir = ""; renderDirs(); // 前の接続先のフォルダ候補は消す
     const dirsDone = loadDirs();
     await loadSaved();
@@ -410,7 +441,8 @@
     if (state !== st) return;
     st.switching = false;
     setBusyControls();
-    if (announce) setStatus(`接続先を「${els.prof.selectedOptions[0]?.textContent || ""}」にしました`);
+    if (st.loadErr) setStatus(LOAD_ERR, true);
+    else if (announce) setStatus(`接続先を「${els.prof.selectedOptions[0]?.textContent || ""}」にしました`);
   }
 
   chrome.storage.onChanged.addListener((ch, area) => {
@@ -587,6 +619,7 @@
 
   async function ask(instruction, display) {
     if (state.busy || state.loadingSaved || state.switching || !state.videoId) return false;
+    if (state.loadErr) { setStatus(LOAD_ERR, true); return false; }
     showTab("chat");
     setBusy(true); // 字幕の読み込み中に二重に送られないよう、先に立てる
     const st = state;
@@ -600,6 +633,7 @@
       setStatus("字幕を読み込んでいます…");
       if (!st.sessionId) await st.dirsReady; // 作業フォルダの一覧が届く前に送らない
       if (state !== st || cancelled) return false;
+      if (st.loadErr) { setBusy(false); setStatus(LOAD_ERR, true); return false; }
       const tr = await currentTranscript();
       if (state !== st || cancelled) return false; // 別の動画へ移った／止めた
       if (!tr) { setBusy(false); setStatus("字幕を取得できなかったので送れませんでした（「字幕」タブを開くと再試行します）", true); return false; }
@@ -662,7 +696,7 @@
     port.onDisconnect.addListener(() => finish(ai.text ? "接続が切れました" : "中断しました", !ai.text));
     // 自分から disconnect したときは onDisconnect が来ないので、止める処理を別に持つ
     state.stop = () => finish("止めました", false);
-    port.postMessage({ profileId: state.profileId, session_id: resumeId, workdir: resumeId ? state.workdir : state.pickDir, message, name: `youyakun: ${state.info?.title || id}`.slice(0, 80) });
+    port.postMessage({ profileId: state.profileId, profileUrl: state.profileUrl, session_id: resumeId, workdir: resumeId ? state.workdir : state.pickDir, message, name: `youyakun: ${state.info?.title || id}`.slice(0, 80) });
   }
 
   // ---------- 差し込み ----------
