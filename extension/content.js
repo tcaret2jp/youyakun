@@ -11,66 +11,136 @@
     "- 最後に、視聴者が覚えておくべきこと・実践できること",
   ].join("\n");
 
+  // 見た目は Notion / Craft のような、余白と文字で整理する静かなデザインにする
   const CSS = `
   :host { all: initial; }
-  .yk { --accent:#127475; --accent-ink:#fff; --bg:#fff; --bg2:#f2f2f2; --ink:#0f0f0f; --sub:#606060; --line:#e5e5e5;
-        font: 14px/1.6 "Roboto","Noto Sans JP",system-ui,sans-serif; color:var(--ink); background:var(--bg);
-        border:1px solid var(--line); border-radius:20px; margin:0 0 16px; overflow:hidden; }
-  .yk.dark { --accent:#0fb2bb; --accent-ink:#0b1416; --bg:#0f0f0f; --bg2:#272727; --ink:#f1f1f1; --sub:#aaa; --line:#3f3f3f; }
-  .head { display:flex; align-items:center; gap:8px; padding:10px 14px; }
-  .logo { width:12px; height:12px; border-radius:50%; background:var(--accent); box-shadow: 8px 0 0 #f1eb35; margin-right:10px; }
-  .title { font-weight:700; flex:1; min-width:0; }
-  .head { gap:4px !important; }
-  select, .icon { font:inherit; color:var(--ink); background:var(--bg2); border:0; border-radius:10px; padding:4px 8px; cursor:pointer; }
-  .icon { width:30px; height:30px; padding:0; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; flex:none; }
-  .icon.primary { background:var(--accent); color:var(--accent-ink); }
-  .icon:hover:not(:disabled) { filter:brightness(.93); }
-  .env, .trbar { display:flex; gap:6px; }
-  .pick { display:flex; align-items:center; gap:4px; flex:1; min-width:0; background:var(--bg2); border-radius:10px; padding:0 0 0 8px; color:var(--sub); }
-  .pick select { flex:1; min-width:0; font-size:12px; background:transparent; padding:5px 6px 5px 2px; }
-  .pick select:disabled { opacity:.6; }
-  .body { padding:0 14px 14px; display:flex; flex-direction:column; gap:10px; }
+  .yk {
+    --bg:#fff; --bg2:#f7f7f5; --hover:rgba(55,53,47,.06); --press:rgba(55,53,47,.1);
+    --ink:#37352f; --sub:rgba(55,53,47,.72); --faint:rgba(55,53,47,.5); --line:rgba(55,53,47,.1);
+    --accent:#0b7f86; --accent-ink:#fff; --accent-soft:rgba(11,127,134,.12); --err:#c0392b; --err-soft:rgba(212,76,71,.08);
+    --code:#eb5757; --shadow:0 1px 2px rgba(15,15,15,.04), 0 6px 20px rgba(15,15,15,.05);
+    font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Noto Sans JP","Roboto",sans-serif;
+    color:var(--ink); background:var(--bg); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
+    margin:0 0 16px; overflow:hidden; -webkit-font-smoothing:antialiased;
+  }
+  .yk.dark {
+    --bg:#202020; --bg2:#2a2a2a; --hover:rgba(255,255,255,.055); --press:rgba(255,255,255,.09);
+    --ink:rgba(255,255,255,.88); --sub:rgba(255,255,255,.64); --faint:rgba(255,255,255,.5); --line:rgba(255,255,255,.09);
+    --accent:#2cc5cd; --accent-ink:#0d1b1c; --accent-soft:rgba(44,197,205,.15); --err:#ff7b72; --err-soft:rgba(255,123,114,.1);
+    --code:#ff8a80; --shadow:none;
+  }
+  .yk *, .yk *::before, .yk *::after { box-sizing:border-box; }
+  button, select, textarea { font:inherit; color:inherit; }
+  button { cursor:pointer; }
+  button:disabled { opacity:.4; cursor:default; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+  /* 上の帯 */
+  .head { display:flex; align-items:center; gap:2px; padding:8px 8px 8px 14px; }
+  .logo { width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:10px 0 0 #f1eb35; margin-right:17px; flex:none; }
+  .title { font-weight:600; letter-spacing:-.01em; flex:1; min-width:0; }
+  .sep { width:1px; height:16px; background:var(--line); margin:0 4px; flex:none; }
+  .icon { width:28px; height:28px; padding:0; border:0; border-radius:6px; background:transparent; color:var(--sub);
+          display:inline-flex; align-items:center; justify-content:center; flex:none; transition:background .12s, color .12s; }
+  .icon:hover:not(:disabled) { background:var(--hover); color:var(--ink); }
+  .icon:active:not(:disabled) { background:var(--press); }
+  .icon.primary { background:var(--accent); color:var(--accent-ink); border-radius:8px; }
+  .icon.primary:hover:not(:disabled) { background:var(--accent); color:var(--accent-ink); filter:brightness(1.07); }
+  .icon.primary:disabled { background:var(--hover); color:var(--faint); opacity:1; }
+  .pill { height:28px; padding:0 10px 0 8px; gap:5px; border:0; border-radius:6px; display:inline-flex; align-items:center; flex:none;
+          background:var(--accent); color:var(--accent-ink); font-size:13px; font-weight:500; margin:0 2px; transition:filter .12s; }
+  .pill:hover:not(:disabled) { filter:brightness(1.07); }
+
+  .body { padding:0 14px 12px; display:flex; flex-direction:column; gap:10px; }
   .collapsed .body { display:none; }
-  button:disabled { opacity:.5; cursor:default; }
-  .status { color:var(--sub); font-size:12px; white-space:pre-wrap; }
-  .status.err { color:#cc0000; }
-  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); }
-  .tab { font:inherit; font-size:13px; font-weight:500; background:none; border:0; color:var(--sub); cursor:pointer;
-         padding:6px 12px; border-bottom:2px solid transparent; margin-bottom:-1px; }
-  .tab.on { color:var(--ink); border-bottom-color:var(--accent); }
-  .tab .cnt { color:var(--sub); font-weight:400; margin-left:4px; font-size:12px; }
+  .status, .tstatus { font-size:12px; color:var(--sub); white-space:pre-wrap; }
+  .status:empty, .tstatus:empty { display:none; }
+  .status.err, .tstatus.err { color:var(--err); background:var(--err-soft); padding:6px 10px; border-radius:6px; }
+
+  /* タブ */
+  .tabs { display:flex; gap:18px; border-bottom:1px solid var(--line); margin:0 -14px; padding:0 14px; }
+  .tab { background:none; border:0; padding:4px 0 8px; font-size:13px; font-weight:500; color:var(--sub);
+         border-bottom:2px solid transparent; margin-bottom:-1px; display:inline-flex; align-items:center; transition:color .12s; }
+  .tab:hover { color:var(--ink); }
+  .tab.on { color:var(--ink); border-bottom-color:var(--ink); }
+  .tab .cnt { margin-left:6px; font-size:11px; color:var(--sub); background:var(--hover); border-radius:4px; padding:0 5px; line-height:17px; }
+  .tab .cnt:empty { display:none; }
   .pane { display:flex; flex-direction:column; gap:10px; }
   .pane[hidden] { display:none; }
-  .tstatus { color:var(--sub); font-size:12px; white-space:pre-wrap; }
-  .tstatus.err { color:#cc0000; }
-  .segs { max-height:520px; overflow:auto; }
-  .empty { color:var(--sub); font-size:13px; padding:8px 0; }
-  .seg { display:flex; gap:8px; padding:2px 0; }
-  .seg.ch { font-weight:700; margin-top:6px; }
-  .yk-ts { color:var(--accent); text-decoration:none; font-variant-numeric:tabular-nums; cursor:pointer; }
-  .seg .yk-ts { flex:none; width:52px; }
-  .chat { display:flex; flex-direction:column; gap:10px; max-height:520px; overflow:auto; }
-  .chat:empty::before { content:"「Claude で要約」を押すか、下の欄から質問してください"; color:var(--sub); font-size:13px; }
-  .msg { border-radius:10px; padding:8px 12px; overflow-wrap:anywhere; }
-  .msg.user { background:var(--bg2); align-self:flex-end; max-width:85%; white-space:pre-wrap; }
-  .msg.ai { border:1px solid var(--line); }
-  .msg.ai p { margin:.3em 0; } .msg.ai ul,.msg.ai ol { margin:.3em 0; padding-left:1.4em; }
-  .msg.ai h3,.msg.ai h4,.msg.ai h5,.msg.ai h6 { margin:.6em 0 .2em; font-size:15px; }
-  .msg.ai pre { background:var(--bg2); padding:8px; border-radius:4px; overflow:auto; }
-  .msg.ai code { font-family: ui-monospace, monospace; font-size:13px; }
-  .typing::after { content:"▍"; animation: blink 1s steps(1) infinite; color:var(--accent); }
-  @keyframes blink { 50% { opacity:0; } }
-  .sbar { display:flex; gap:8px; align-items:center; }
-  .sbar select { flex:1; min-width:0; font-size:12px; }
-  .ask { display:flex; gap:8px; align-items:flex-end; }
-  textarea { flex:1; font:inherit; color:var(--ink); background:var(--bg2); border:0; border-radius:10px; padding:8px 10px; resize:vertical; min-height:38px; max-height:200px; }
-  .sess { display:flex; flex-wrap:wrap; gap:8px; align-items:center; color:var(--sub); font-size:12px; }
+
+  /* 選択欄（アイコン＋文字だけの静かなメニュー） */
+  .pick { position:relative; display:flex; align-items:center; gap:6px; min-width:0; height:28px; padding:0 22px 0 8px;
+          border-radius:6px; color:var(--sub); transition:background .12s; }
+  .pick:hover { background:var(--hover); }
+  .pick:has(select:focus-visible) { background:var(--hover); box-shadow:0 0 0 2px var(--accent); } /* キーボードで選んでいる欄をはっきり示す */
+  .pick > svg { flex:none; }
+  .pick select { appearance:none; -webkit-appearance:none; border:0; background:transparent; outline:none; min-width:0; flex:1;
+                 font-size:12.5px; color:var(--ink); padding:0; cursor:pointer; text-overflow:ellipsis; field-sizing:content; }
+  .pick select:disabled { cursor:default; }
+  .pick:has(select:disabled) { opacity:.45; }
+  .pick:has(select:disabled):hover { background:transparent; }
+  .pick .chev { position:absolute; right:6px; top:50%; margin-top:-6px; pointer-events:none; color:var(--faint); }
+  .yk.dark option { background:#2a2a2a; color:#eee; }
+  .sbar { display:flex; align-items:center; gap:2px; margin:0 -8px; }
+  .sbar .pick { flex:0 1 auto; margin-right:auto; }
+  .sbar .pick:has(select:disabled) { opacity:1; padding-right:8px; } /* 会話が 1 つだけのときは、ただの見出しとして見せる */
+  .sbar .pick:has(select:disabled) .chev { display:none; }
+  .sbar .pick:has(select:disabled) select { color:var(--sub); }
+  .sbar .pick select { font-size:13px; font-weight:500; }
+  .trbar { display:flex; margin:0 -8px; }
+
+  /* チャット（返答は文書のように、質問は小さな吹き出しに） */
+  .chat { display:flex; flex-direction:column; gap:16px; max-height:520px; overflow:auto; padding:2px; scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
+  .chat:empty { padding:22px 0; }
+  .chat:empty::before { content:"「要約」を押すか、下の欄から質問してください"; color:var(--faint); font-size:13px; text-align:center; }
+  .msg { overflow-wrap:anywhere; }
+  .msg.user { align-self:flex-end; max-width:85%; background:var(--bg2); padding:6px 12px; border-radius:12px; white-space:pre-wrap; }
+  .yk.dark .msg.user { background:var(--hover); }
+  .msg.ai > :first-child { margin-top:0; }
+  .msg.ai > :last-child { margin-bottom:0; }
+  .msg.ai p { margin:.5em 0; }
+  .msg.ai ul, .msg.ai ol { margin:.4em 0; padding-left:1.4em; }
+  .msg.ai li { margin:.2em 0; padding-left:.1em; }
+  .msg.ai li::marker { color:var(--faint); }
+  .msg.ai h3, .msg.ai h4, .msg.ai h5, .msg.ai h6 { margin:1.1em 0 .3em; font-size:15px; font-weight:600; letter-spacing:-.01em; line-height:1.4; }
+  .msg.ai strong { font-weight:600; }
+  .msg.ai hr { border:0; border-top:1px solid var(--line); margin:1em 0; }
+  .msg.ai code { font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em; color:var(--code); background:var(--hover); padding:.12em .36em; border-radius:4px; }
+  .msg.ai pre { background:var(--bg2); padding:10px 12px; border-radius:6px; overflow:auto; }
+  .msg.ai pre code { color:inherit; background:none; padding:0; font-size:12.5px; }
+  .yk-ts { color:var(--accent); text-decoration:none; font-variant-numeric:tabular-nums; font-weight:500; cursor:pointer;
+           border-radius:4px; padding:0 2px; margin:0 -2px; transition:background .12s; }
+  .yk-ts:hover { background:var(--accent-soft); }
+  .typing::after { content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent);
+                   margin-left:4px; vertical-align:middle; animation:pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.25; transform:scale(.75); } }
+
+  /* 入力欄：送る先（接続先・作業フォルダ）と文面を 1 つの枠にまとめる */
+  .composer { border:1px solid var(--line); border-radius:10px; background:var(--bg); transition:border-color .12s, box-shadow .12s; }
+  .composer:has(textarea:focus) { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); } /* 文面を書いているときだけ枠を光らせる */
+  .env { display:flex; gap:2px; padding:4px 4px 0; min-width:0; }
+  .env .pick { flex:0 1 auto; max-width:50%; }
+  .env .pick select { font-size:12px; }
+  .ask { display:flex; align-items:flex-end; gap:6px; padding:0 6px 6px 12px; }
+  textarea { flex:1; border:0; background:transparent; outline:none; resize:none; padding:6px 0; min-height:34px; max-height:200px; line-height:1.55; }
+  textarea::placeholder { color:var(--faint); }
+  .sess { display:flex; gap:8px; align-items:center; justify-content:space-between; color:var(--faint); font-size:11.5px; margin-top:-4px; }
   .sess:empty { display:none; }
-  .link { background:none; border:0; color:var(--accent); cursor:pointer; font:inherit; padding:0; }
+  .link { background:none; border:0; color:var(--sub); cursor:pointer; padding:0; font-size:inherit; }
+  .link:hover { color:var(--ink); text-decoration:underline; }
+
+  /* 字幕 */
+  .segs { max-height:520px; overflow:auto; margin:0 -8px; scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
+  .empty { color:var(--faint); font-size:13px; padding:8px; }
+  .seg { display:flex; gap:10px; padding:3px 8px; border-radius:6px; line-height:1.6; transition:background .12s; }
+  .seg:hover { background:var(--hover); }
+  .seg .yk-ts { flex:none; width:46px; margin:0; padding:0; color:var(--sub); font-size:12px; line-height:22px; font-family:"SF Mono",ui-monospace,Menlo,monospace; font-weight:400; }
+  .seg:hover .yk-ts { color:var(--accent); background:none; }
+  .seg.ch { font-weight:600; margin-top:10px; }
   `;
 
   // パネルのアイコン（線のみ・currentColor）
-  const svg = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const svg = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
   const ICON = {
     copy: svg('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
     clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
@@ -80,9 +150,11 @@
     up: svg('<path d="M6 9l6 6 6-6"/>'),
     server: svg('<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>'),
     folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+    chat: svg('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>'),
     plus: svg('<path d="M12 5v14M5 12h14"/>'),
     send: svg('<path d="M12 19V5M5 12l7-7 7 7"/>'),
     stop: svg('<rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/>'),
+    chev: svg('<path d="M7 10l5 5 5-5"/>').replace('width="16" height="16"', 'width="12" height="12" class="chev"'),
     lang: svg('<path d="M4 5h9M8.5 3v2M6 5c.5 3 2.5 5.5 5.5 7M11 5c-.8 3.5-3 6.5-6 8"/><path d="M13 21l4-9 4 9M14.5 18h5"/>'),
   };
 
@@ -114,7 +186,8 @@
           <span class="logo"></span><span class="title">youyakun</span>
           <button class="icon copy" title="字幕をコピー">${ICON.copy}</button>
           <button class="icon copyts" title="時刻つきで字幕をコピー">${ICON.clock}</button>
-          <button class="icon primary sum" title="Claude で要約">${ICON.summary}</button>
+          <button class="pill sum" title="Claude で要約">${ICON.summary}<span>要約</span></button>
+          <span class="sep"></span>
           <button class="icon gear" title="設定">${ICON.gear}</button>
           <button class="icon fold" title="たたむ">${ICON.down}</button>
         </div>
@@ -126,24 +199,26 @@
           </div>
           <div class="pane pane-chat">
             <div class="sbar">
-              <select class="ssel" title="この動画での会話"></select>
+              <label class="pick" title="この動画での会話">${ICON.chat}<select class="ssel"></select>${ICON.chev}</label>
               <button class="icon snew" title="新しい会話">${ICON.plus}</button>
             </div>
             <div class="chat"></div>
             <!-- 送る先（接続先と作業フォルダ）はメッセージ欄のすぐ上で選ぶ -->
-            <div class="env">
-              <label class="pick" title="接続先（Claude Code が動くマシン）">${ICON.server}<select class="prof"></select></label>
-              <label class="pick" title="作業フォルダ（Claude Code を動かすフォルダ。その CLAUDE.md が読み込まれます）">${ICON.folder}<select class="dir"></select></label>
-            </div>
-            <div class="ask">
-              <textarea rows="1" placeholder="この動画について質問（Enter で送信）"></textarea>
-              <button class="icon primary send" title="送信">${ICON.send}</button>
+            <div class="composer">
+              <div class="env">
+                <label class="pick" title="接続先（Claude Code が動くマシン）">${ICON.server}<select class="prof"></select>${ICON.chev}</label>
+                <label class="pick" title="作業フォルダ（Claude Code を動かすフォルダ。その CLAUDE.md が読み込まれます）">${ICON.folder}<select class="dir"></select>${ICON.chev}</label>
+              </div>
+              <div class="ask">
+                <textarea rows="1" placeholder="この動画について質問（Enter で送信）"></textarea>
+                <button class="icon primary send" title="送信">${ICON.send}</button>
+              </div>
             </div>
             <div class="sess"></div>
           </div>
           <div class="pane pane-tr" hidden>
             <div class="trbar">
-              <label class="pick" title="字幕の言語">${ICON.lang}<select class="lang"></select></label>
+              <label class="pick" title="字幕の言語">${ICON.lang}<select class="lang"></select>${ICON.chev}</label>
             </div>
             <div class="tstatus"></div>
             <div class="segs"></div>
@@ -166,6 +241,7 @@
       const c = els.box.classList.toggle("collapsed");
       els.fold.innerHTML = c ? ICON.up : ICON.down;
       els.fold.title = c ? "ひらく" : "たたむ";
+      if (!c) grow();
       store.set({ collapsed: c });
     };
     els.prof.onchange = () => {
@@ -205,6 +281,7 @@
       els.segs.innerHTML = ""; // 前の言語の行は消す
       loadTranscript();
     };
+    els.input.addEventListener("input", grow); // 文面に合わせて入力欄を伸ばす
     els.input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); onSend(); }
     });
@@ -221,6 +298,11 @@
       if (collapsed) { els.box.classList.add("collapsed"); els.fold.innerHTML = ICON.up; els.fold.title = "ひらく"; }
     });
     return host;
+  }
+
+  function grow() {
+    els.input.style.height = "auto";
+    els.input.style.height = Math.min(els.input.scrollHeight, 200) + "px";
   }
 
   function setStatus(text, err = false) {
@@ -505,7 +587,7 @@
     els.paneTr.hidden = name !== "tr";
     if (name === "tr" && state?.videoId && !state.transcript) loadTranscript();
     // 字幕タブを見ている間に届いた返答も、チャットに戻ったら末尾を見せる
-    if (name === "chat") els.chat.scrollTop = els.chat.scrollHeight;
+    if (name === "chat") { els.chat.scrollTop = els.chat.scrollHeight; grow(); } // 隠れている間に戻した下書きの高さを測り直す
     if (remember) store.set({ tab: name });
   }
 
@@ -612,9 +694,9 @@
     if (state.busy) { state.stop?.(); return; }
     const text = els.input.value.trim();
     if (!text) return;
-    els.input.value = "";
+    els.input.value = ""; grow();
     // 送れなかったとき（字幕が取れないなど）は、入力を戻す
-    ask(text, text).then((ok) => { if (ok === false && !els.input.value) els.input.value = text; });
+    ask(text, text).then((ok) => { if (ok === false && !els.input.value) { els.input.value = text; grow(); } });
   }
 
   async function ask(instruction, display) {
