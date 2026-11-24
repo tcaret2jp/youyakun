@@ -69,6 +69,7 @@
     const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
     return tracks.map((t) => ({
       languageCode: t.languageCode,
+      vssId: t.vssId || "",
       name: textOf(t.name) || t.languageCode,
       auto: t.kind === "asr",
       baseUrl: t.baseUrl,
@@ -136,7 +137,10 @@
     const u = new URL(track.baseUrl, location.origin);
     u.searchParams.set("fmt", "json3");
     const res = await fetch(u.toString(), { credentials: "omit" });
-    const body = res.ok ? await res.text() : "";
+    return parseJson3(res.ok ? await res.text() : "");
+  }
+
+  function parseJson3(body) {
     if (!body) throw new Error("字幕ファイルが空でした");
     const json = JSON.parse(body);
     const segments = [];
@@ -155,7 +159,8 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function parseClock(s) {
-    const p = (s || "").trim().split(":").map(Number);
+    const m = (s || "").match(/(\d+:)?\d+:\d{2}/);
+    const p = (m ? m[0] : "").split(":").map(Number);
     if (p.some(isNaN)) return 0;
     return p.reduce((a, b) => a * 60 + b, 0) * 1000;
   }
@@ -176,25 +181,51 @@
     return segments.filter((s) => s.text);
   }
 
+  // YouTube の文字起こしパネルは開かない（サイドバーに出てしまうため）。すでに開いているときだけ読む
   async function viaDom() {
-    let segs = readDomSegments();
-    if (segs.length) return segs;
-    // 概要欄を開いてから「文字起こしを表示」ボタンを押す
-    document.querySelector("tp-yt-paper-button#expand, #description-inline-expander #expand")?.click();
-    await sleep(300);
-    const btn =
-      document.querySelector("ytd-video-description-transcript-section-renderer button") ||
-      [...document.querySelectorAll("button, ytd-button-renderer")].find((b) =>
-        /文字起こし|transcript/i.test(b.textContent || b.getAttribute("aria-label") || "")
-      );
-    if (!btn) throw new Error("「文字起こしを表示」ボタンが見つかりません");
-    btn.click();
-    for (let i = 0; i < 40; i++) {
-      await sleep(250);
-      segs = readDomSegments();
-      if (segs.length) return segs;
+    const segs = readDomSegments();
+    if (!segs.length) throw new Error("文字起こしパネルは開いていません");
+    return segs;
+  }
+
+  // ページ側（page.js）から、プレイヤーが使った字幕の URL をもらう
+  function askPage(videoId, fresh = false) {
+    return new Promise((resolve, reject) => {
+      const nonce = Math.random().toString(36).slice(2);
+      const timer = setTimeout(() => { window.removeEventListener("message", onMsg); reject(new Error("ページから応答がありません")); }, 9000);
+      function onMsg(ev) {
+        const d = ev.data;
+        if (ev.source !== window || !d || d.src !== "youyakun-page" || d.nonce !== nonce) return;
+        clearTimeout(timer);
+        window.removeEventListener("message", onMsg);
+        d.url ? resolve(d.url) : reject(new Error(d.error || "字幕の URL がありません"));
+      }
+      window.addEventListener("message", onMsg);
+      window.postMessage({ src: "youyakun-cs", type: "potUrl", videoId, nonce, fresh }, location.origin);
+    });
+  }
+
+  // プレイヤーの字幕 URL の言語だけ差し替えて、好きな言語の字幕を読む
+  async function viaPlayer(videoId, track) {
+    if (!track) throw new Error("字幕の言語がありません");
+    const once = async (fresh) => {
+      const u = new URL(await askPage(videoId, fresh));
+      // ページ側の応答は信用しきらない：YouTube の字幕ファイルで、この動画のものだけ使う
+      if (u.origin !== "https://www.youtube.com" || u.pathname !== "/api/timedtext" || u.searchParams.get("v") !== videoId) {
+        throw new Error("字幕の URL が不正です");
+      }
+      u.searchParams.set("lang", track.languageCode);
+      if (track.auto) u.searchParams.set("kind", "asr");
+      else u.searchParams.delete("kind");
+      u.searchParams.delete("tlang");
+      u.searchParams.set("fmt", "json3");
+      return parseJson3(await (await fetch(u.toString())).text());
+    };
+    try {
+      return await once(false);
+    } catch {
+      return await once(true); // URL の期限切れなどで空なら、プレイヤーに読み込み直させてもう一度
     }
-    throw new Error("文字起こしパネルが読み込めません");
   }
 
   // 公開する関数 ------------------------------------------------------------
@@ -218,7 +249,15 @@
     return p;
   }
 
-  async function getTranscript(videoId, trackIndex = 0) {
+  // 既定の字幕：日本語（手動）→ 日本語（自動生成）→ 先頭
+  function defaultTrackIndex(tracks) {
+    const i = tracks.findIndex((t) => t.languageCode.startsWith("ja") && !t.auto);
+    if (i >= 0) return i;
+    const j = tracks.findIndex((t) => t.languageCode.startsWith("ja"));
+    return j >= 0 ? j : 0;
+  }
+
+  async function getTranscript(videoId, trackIndex = null) {
     const errors = [];
     const onPage = new URLSearchParams(location.search).get("v") === videoId;
     let info;
@@ -230,10 +269,12 @@
       errors.push(`watch: ${e.message}`);
       info = { data: {}, videoId, title: document.title.replace(/ - YouTube$/, ""), channel: "", lengthSec: 0, tracks: [] };
     }
+    if (trackIndex == null) trackIndex = defaultTrackIndex(info.tracks);
     const track = info.tracks[trackIndex];
     const tries = [];
+    if (onPage && track) tries.push(["player", () => viaPlayer(videoId, track)]);
     if (info.data.player) {
-      tries.push(["innertube", () => viaInnertube(info.data, trackIndex === 0 ? null : track)]);
+      tries.push(["innertube", () => viaInnertube(info.data, track)]);
       tries.push(["timedtext", () => viaTimedtext(track)]);
     }
     // ページのパネルは表示中の動画のときだけ使える（言語はパネルで選ばれているもの）
@@ -241,7 +282,7 @@
     for (const [source, fn] of tries) {
       try {
         const segments = await fn();
-        return { ...info, segments, source, track: source === "dom" && trackIndex !== 0 ? null : track };
+        return { ...info, segments, source, track: source === "dom" ? null : track };
       } catch (e) {
         errors.push(`${source}: ${e.message}`);
       }
@@ -264,5 +305,5 @@
     return segments.map((s) => (s.chapter ? `\n## ${s.text}\n` : s.text)).join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
 
-  globalThis.YouyakunTranscript = { getInfo, getTranscript, toText, fmtTime, parseClock };
+  globalThis.YouyakunTranscript = { getInfo, getTranscript, defaultTrackIndex, toText, fmtTime, parseClock };
 })();

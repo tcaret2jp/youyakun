@@ -61,7 +61,7 @@
 
   let root, els, state;
   const resetState = (videoId) => ({
-    videoId, profileId: "", profileUrl: "", dirs: [], pickDir: "", info: null, transcript: null, trackIndex: 0, sessionId: "", workdir: "",
+    videoId, profileId: "", profileUrl: "", dirs: [], pickDir: "", info: null, transcript: null, trackIndex: null, sessionId: "", workdir: "",
     messages: [], busy: false, port: null,
   });
 
@@ -282,6 +282,10 @@
         ? info.tracks.map((t, i) => `<option value="${i}">${MD.esc(t.name)}${t.auto ? "（自動）" : ""}</option>`).join("")
         : `<option>字幕なし</option>`;
       els.lang.disabled = !info.tracks.length;
+      if (info.tracks.length && state.trackIndex == null) {
+        state.trackIndex = T.defaultTrackIndex(info.tracks); // 日本語を既定にする
+      }
+      if (state.trackIndex != null) els.lang.value = String(state.trackIndex);
       if (!info.tracks.length) setStatus("この動画には字幕がないようです（ページの「文字起こし」パネルから取得を試みます）");
     } catch (e) {
       setStatus(e.message, true);
@@ -290,6 +294,13 @@
 
   async function loadTranscript() {
     if (state.transcript) return state.transcript;
+    if (state.trackIndex == null) {
+      // 言語の一覧がまだなら先に読み、日本語を既定にする（待っている間に動画が変わったら使わない）
+      const vid = state.videoId;
+      const info = await T.getInfo(vid).catch(() => null);
+      if (state.videoId !== vid) return null;
+      if (info?.tracks.length && state.trackIndex == null) state.trackIndex = T.defaultTrackIndex(info.tracks);
+    }
     const id = state.videoId, ti = state.trackIndex;
     setStatus("字幕を読み込んでいます…");
     try {
