@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>youyakun（ようやくん）｜その動画、Claude Code に聞いてみる。</title>
+<meta name="description" content="YouTube の字幕をまとめて取り出し、自分の Claude Code に渡して要約・質問できるブラウザ拡張。返答の時刻をクリックすれば、その場面へ。Chrome / Brave / Chromium 対応。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="youyakun（ようやくん）｜その動画、Claude Code に聞いてみる。">
+<meta property="og:description" content="YouTube の字幕を自分の Claude Code に渡して、要約・質問できるブラウザ拡張。">
+<meta property="og:image" content="https://youyakun.vercel.app/og.png">
+<meta property="og:url" content="https://youyakun.vercel.app/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#ffffff;--bg2:#f5f6f4;--line:#e4e6e3;
+  --ink:#1f2424;--ink2:#636b6b;--ink3:#9aa1a1;
+  --accent:#0b7f86;--accent-h:#096c72;--accent2:#0fb2bb;--accent-soft:rgba(15,178,187,.12);--yellow:#f1eb35;
+  --shadow:0 1px 2px rgba(0,0,0,.05),0 12px 36px rgba(0,0,0,.09);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Zen Kaku Gothic New",-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic UI",Meiryo,sans-serif;font-size:16px;line-height:1.8;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+img,video,svg{display:block;max-width:100%}
+.wrap{width:min(1080px,100% - 32px);margin:0 auto}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;padding:14px 26px;font-weight:700;font-size:16px;text-decoration:none;transition:background .15s,transform .15s;white-space:nowrap}
+.btn svg{width:18px;height:18px;flex:none}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.primary:hover{background:var(--accent-h)}
+.btn.ghost{background:var(--bg2);color:var(--ink)}
+.btn.ghost:hover{background:#eaecea}
+.btn:active{transform:scale(.98)}
+.logo{width:32px;height:32px;flex:none}
+
+/* ヘッダー */
+header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.82);backdrop-filter:saturate(180%) blur(16px);-webkit-backdrop-filter:saturate(180%) blur(16px);border-bottom:1px solid rgba(0,0,0,.06)}
+header .wrap{display:flex;align-items:center;gap:24px;height:60px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:900;font-size:19px;text-decoration:none}
+header nav{display:flex;align-items:center;gap:22px;margin-left:auto;font-size:14px}
+header nav a{text-decoration:none;color:var(--ink2)}
+header nav a:hover{color:var(--ink)}
+header .btn{padding:8px 18px;font-size:14px}
+
+/* ヒーロー */
+.hero{padding:72px 0 0;text-align:center;overflow:hidden}
+.tag{display:inline-flex;align-items:center;gap:8px;background:var(--accent-soft);color:var(--accent);font-weight:700;font-size:13px;border-radius:999px;padding:6px 14px}
+.tag::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent2);box-shadow:9px 0 0 var(--yellow);margin-right:9px}
+.hero h1{font-size:clamp(34px,6.2vw,62px);line-height:1.3;font-weight:900;margin:20px 0 18px}
+.hero h1 em{font-style:normal;color:var(--accent);background:linear-gradient(transparent 68%,rgba(241,235,53,.75) 68%)}
+.hero .lead{font-size:clamp(16px,2.1vw,19px);color:var(--ink2);margin:0 auto;max-width:660px}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:32px}
+.note{margin-top:14px;font-size:13px;color:var(--ink3)}
+
+/* YouTube の画面の見本 */
+.stage{margin:52px auto 0;max-width:1000px;position:relative;padding:0 0 64px}
+.stage::before{content:"";position:absolute;inset:60px -12% 0;background:radial-gradient(closest-side,rgba(15,178,187,.18),transparent);z-index:-1}
+.yt{background:#fff;border-radius:20px;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 30px 80px rgba(0,0,0,.14);overflow:hidden;text-align:left}
+.yt-bar{display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid #eee}
+.yt-bar .dots{display:flex;gap:6px}
+.yt-bar .dots i{width:11px;height:11px;border-radius:50%;background:#e3e3e3}
+.yt-bar .url{flex:1;max-width:460px;margin:0 auto;background:#f1f1f1;border-radius:999px;padding:5px 16px;font-size:12.5px;color:#666;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}
+.yt-body{display:grid;grid-template-columns:1fr 372px;gap:22px;padding:20px}
+.player{aspect-ratio:16/9;border-radius:12px;background:linear-gradient(135deg,#123a3d,#0b2224 55%,#18484b);position:relative;overflow:hidden}
+.player .scene{position:absolute;inset:0;display:grid;place-items:center;color:rgba(255,255,255,.92);font-weight:900;font-size:clamp(18px,2.6vw,30px);text-align:center;line-height:1.45}
+.player .scene small{display:block;font-size:.5em;font-weight:500;color:rgba(255,255,255,.6);margin-top:6px}
+.player .ctl{position:absolute;left:0;right:0;bottom:0;padding:0 14px 10px;background:linear-gradient(transparent,rgba(0,0,0,.5))}
+.player .prog{height:4px;border-radius:2px;background:rgba(255,255,255,.3);margin-bottom:8px}
+.player .prog b{display:block;height:100%;width:36%;border-radius:2px;background:#f00}
+.player .row{display:flex;align-items:center;gap:12px;color:#fff;font-size:12px;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+.player .row svg{width:16px;height:16px}
+.vtitle{font-weight:700;font-size:18px;margin:14px 0 4px;line-height:1.5;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+.vmeta{display:flex;align-items:center;gap:10px;font-size:13px;color:#606060;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}
+.vmeta .av{width:30px;height:30px;border-radius:50%;background:#d7e9e3}
+.vmeta b{color:#0f0f0f;font-weight:600}
+
+/* youyakun のパネル（拡張と同じ見た目） */
+.yk{
+  --bg:#fff;--bg2:#f7f7f5;--hover:rgba(55,53,47,.06);--ink:#37352f;--sub:rgba(55,53,47,.72);--faint:rgba(55,53,47,.5);--line:rgba(55,53,47,.1);
+  --accent:#0b7f86;--accent-ink:#fff;--accent-soft:rgba(11,127,134,.12);--code:#eb5757;
+  font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Noto Sans JP","Roboto",sans-serif;
+  color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(15,15,15,.04),0 6px 20px rgba(15,15,15,.05);overflow:hidden;text-align:left
+}
+.yk svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.yk .head{display:flex;align-items:center;gap:2px;padding:8px 8px 8px 14px}
+.yk .lg{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:10px 0 0 #f1eb35;margin-right:17px;flex:none}
+.yk .title{font-weight:600;letter-spacing:-.01em;flex:1}
+.yk .ic{width:28px;height:28px;border-radius:6px;color:var(--sub);display:inline-flex;align-items:center;justify-content:center}
+.yk .ic.primary{background:var(--accent);color:var(--accent-ink);border-radius:8px}
+.yk .pill{height:28px;padding:0 10px 0 8px;gap:5px;border-radius:6px;display:inline-flex;align-items:center;background:var(--accent);color:var(--accent-ink);font-size:13px;font-weight:500;margin:0 2px}
+.yk .sep{width:1px;height:16px;background:var(--line);margin:0 4px}
+.yk .body{padding:0 14px 12px;display:flex;flex-direction:column;gap:10px}
+.yk .tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin:0 -14px;padding:0 14px}
+.yk .tab{padding:4px 0 8px;font-size:13px;font-weight:500;color:var(--sub);border-bottom:2px solid transparent;margin-bottom:-1px;display:inline-flex;align-items:center}
+.yk .tab.on{color:var(--ink);border-bottom-color:var(--ink)}
+.yk .cnt{margin-left:6px;font-size:11px;color:var(--sub);background:var(--hover);border-radius:4px;padding:0 5px;line-height:17px}
+.yk .pick{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:6px;color:var(--sub);font-size:12.5px;min-width:0}
+.yk .pick span{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.yk .pick .chev{width:12px;height:12px;color:var(--faint)}
+.yk .sbar{display:flex;align-items:center;margin:0 -8px}
+.yk .sbar .pick{margin-right:auto}
+.yk .sbar .pick span{font-size:13px;font-weight:500}
+.yk .chat{display:flex;flex-direction:column;gap:14px}
+.yk .msg.user{align-self:flex-end;max-width:85%;background:var(--bg2);padding:6px 12px;border-radius:12px}
+.yk .msg.ai p{margin:.4em 0}
+.yk .msg.ai ul{margin:.3em 0;padding-left:1.3em}
+.yk .msg.ai li{margin:.15em 0}
+.yk .msg.ai li::marker{color:var(--faint)}
+.yk .msg.ai h4{margin:.9em 0 .2em;font-size:14.5px;font-weight:600;line-height:1.4}
+.yk .msg.ai>:first-child{margin-top:0}
+.yk .msg.ai>:last-child{margin-bottom:0}
+.yk .ts{color:var(--accent);font-variant-numeric:tabular-nums;font-weight:500;border-radius:4px;padding:0 2px;margin:0 -2px}
+.yk .ts.hl{background:var(--accent-soft)}
+.yk .composer{border:1px solid var(--line);border-radius:10px}
+.yk .env{display:flex;gap:2px;padding:4px 4px 0;min-width:0}
+.yk .env .pick{max-width:50%}
+.yk .env .pick span{font-size:12px}
+.yk .ask{display:flex;align-items:flex-end;gap:6px;padding:0 6px 6px 12px}
+.yk .ask .ph{flex:1;padding:6px 0;color:var(--faint);min-height:34px}
+.yk .typing::after{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-left:4px;vertical-align:middle;animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25;transform:scale(.75)}}
+.yk .segs{margin:0 -8px}
+.yk .seg{display:flex;gap:10px;padding:3px 8px;border-radius:6px;line-height:1.6}
+.yk .seg.on{background:var(--hover)}
+.yk .seg .t{flex:none;width:46px;color:var(--sub);font-size:12px;line-height:22px;font-family:"SF Mono",ui-monospace,Menlo,monospace}
+.yk .seg.on .t{color:var(--accent)}
+.yk .seg.ch{font-weight:600;margin-top:8px}
+
+/* 吹き出しの注記 */
+.callout{position:absolute;display:flex;align-items:center;gap:8px;background:var(--ink);color:#fff;font-size:13px;font-weight:700;border-radius:999px;padding:8px 16px;box-shadow:0 8px 24px rgba(0,0,0,.18);white-space:nowrap}
+.callout::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--yellow)}
+.c1{right:40px;top:-18px}
+.c2{left:-14px;bottom:30px}
+
+section{padding:96px 0}
+.sec-head{text-align:center;margin-bottom:52px}
+.sec-head .k{font-size:14px;font-weight:700;color:var(--accent)}
+.sec-head h2{font-size:clamp(26px,4vw,38px);line-height:1.45;margin:8px 0 12px;font-weight:900}
+.sec-head p{margin:0 auto;color:var(--ink2);max-width:620px}
+
+/* 悩み */
+.pain{background:var(--bg2)}
+.pains{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pains div{background:#fff;border-radius:22px;padding:26px 24px;font-weight:700;font-size:17px;line-height:1.6}
+.pains small{display:block;font-weight:400;font-size:14px;color:var(--ink2);margin-top:6px}
+
+/* しくみ */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;counter-reset:s}
+.step{border:1px solid var(--line);border-radius:22px;padding:28px 26px}
+.step::before{counter-increment:s;content:counter(s);width:34px;height:34px;border-radius:50%;background:var(--accent2);color:#fff;font-weight:900;display:grid;place-items:center;margin-bottom:16px}
+.step:nth-child(2)::before{background:var(--yellow);color:var(--ink)}
+.step:nth-child(3)::before{background:var(--accent)}
+.step h3{margin:0 0 6px;font-size:19px}
+.step p{margin:0;color:var(--ink2);font-size:15px}
+.flow{margin-top:44px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap}
+.node{display:flex;align-items:center;gap:10px;background:var(--bg2);border-radius:999px;padding:9px 18px 9px 10px;font-weight:700;font-size:15px}
+.node i{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;flex:none}
+.node i svg{width:15px;height:15px}
+.flow .arr{color:var(--ink3);font-size:13px;display:flex;flex-direction:column;align-items:center;line-height:1.3}
+.flow .arr small{font-size:11.5px}
+
+/* 画面 */
+.screen{background:var(--bg2)}
+.screen + .screen{padding-top:0}
+.screen-grid{display:grid;grid-template-columns:1fr 380px;gap:56px;align-items:center}
+.screen-grid.rev{grid-template-columns:380px 1fr}
+.screen-grid.rev .yk{order:-1}
+.screen-grid h2{font-size:clamp(26px,3.6vw,36px);line-height:1.45;margin:8px 0 14px;font-weight:900}
+.screen-grid .k{font-size:14px;font-weight:700;color:var(--accent)}
+.screen-grid p{color:var(--ink2);margin:0 0 14px}
+.checks{list-style:none;padding:0;margin:22px 0 0;display:grid;gap:10px}
+.checks li{display:flex;gap:10px;align-items:flex-start;font-weight:500}
+.checks li::before{content:"";flex:none;width:20px;height:20px;margin-top:5px;border-radius:50%;background:var(--accent2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center/12px no-repeat}
+
+/* 特長 */
+.feats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.feat{background:var(--bg2);border-radius:22px;padding:28px 26px}
+.feat .fi{width:48px;height:48px;border-radius:50%;background:#fff;display:grid;place-items:center;margin-bottom:16px}
+.feat .fi svg{width:24px;height:24px}
+.feat h3{margin:0 0 6px;font-size:18px}
+.feat p{margin:0;color:var(--ink2);font-size:15px}
+
+/* はじめかた */
+.install{background:#14292a;color:#fff}
+.install .sec-head .k{color:var(--yellow)}
+.install .sec-head p{color:#a4b4b4}
+.ins{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;counter-reset:i}
+.ins>div{background:#1f3a3b;border-radius:22px;padding:28px 26px}
+.ins>div::before{counter-increment:i;content:counter(i);width:30px;height:30px;border-radius:50%;background:var(--accent2);color:#08292b;font-weight:900;display:grid;place-items:center;margin-bottom:14px;font-size:15px}
+.ins h3{margin:0 0 8px;font-size:18px}
+.ins p{margin:0;color:#b7c5c5;font-size:15px}
+.ins code{background:#2c4d4e;border-radius:6px;padding:1px 7px;font-size:13px;color:#fff;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap}
+.req{margin:28px auto 0;max-width:760px;display:flex;flex-wrap:wrap;gap:8px 10px;justify-content:center}
+.req span{background:#1f3a3b;border-radius:999px;padding:6px 14px;font-size:13.5px;color:#cfdcdc}
+.install .cta{margin-top:36px}
+.install .btn.ghost{background:#1f3a3b;color:#fff}
+.install .btn.ghost:hover{background:#2a4a4b}
+
+/* よくある質問 */
+.faq{max-width:760px;margin:0 auto}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{list-style:none;cursor:pointer;padding:22px 40px 22px 0;font-weight:700;font-size:17px;position:relative}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"";position:absolute;right:6px;top:50%;width:10px;height:10px;margin-top:-8px;border-right:2px solid var(--ink3);border-bottom:2px solid var(--ink3);transform:rotate(45deg);transition:transform .2s}
+.faq details[open] summary::after{transform:rotate(-135deg);margin-top:-2px}
+.faq details p{margin:-6px 0 22px;color:var(--ink2)}
+.faq code{background:var(--bg2);border-radius:6px;padding:1px 7px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+.final{text-align:center;padding:96px 0 104px;background:linear-gradient(180deg,#fff,var(--accent-soft))}
+.final .logo{width:76px;height:76px;margin:0 auto 22px}
+.final h2{font-size:clamp(28px,4.4vw,42px);margin:0 0 10px;font-weight:900;line-height:1.4}
+.final p{color:var(--ink2);margin:0}
+
+footer{border-top:1px solid var(--line);padding:28px 0;font-size:13px;color:var(--ink3)}
+footer .wrap{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+footer a{color:var(--ink2);text-decoration:none}
+footer .sp{margin-left:auto}
+
+@media (max-width:900px){
+  .yt-body{grid-template-columns:1fr}
+  .callout{display:none}
+  .player .scene small{display:none}
+}
+@media (max-width:860px){
+  header nav a:not(.btn){display:none}
+  .pains,.steps,.feats,.ins{grid-template-columns:1fr}
+  .screen-grid,.screen-grid.rev{grid-template-columns:1fr;gap:40px}
+  .screen-grid .yk{max-width:380px;margin:0 auto;width:100%}
+  .screen-grid.rev .yk{order:0}
+  section{padding:72px 0}
+  .hero{padding-top:48px}
+  .feat,.step,.ins>div{padding:20px}
+  .feat{display:grid;grid-template-columns:40px 1fr;column-gap:14px}
+  .feat .fi{width:40px;height:40px;margin:0;grid-row:span 2}
+  .feat .fi svg{width:20px;height:20px}
+  .step::before{margin-bottom:10px}
+  .yt{border-radius:14px}
+  .yt-body{padding:12px}
+  .flow{flex-direction:column}
+  .flow .arr{transform:none}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.yk .typing::after{animation:none}}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="mark" viewBox="0 0 128 128">
+    <rect x="4" y="4" width="120" height="120" rx="31" fill="#0b7e86"/>
+    <rect x="10" y="10" width="108" height="108" rx="25" fill="#0fb2bb"/>
+    <rect x="19" y="41" width="90" height="50" rx="25" fill="#0b7e86"/>
+    <polygon points="36,52 36,80 59,66" fill="#fff" stroke="#fff" stroke-width="6" stroke-linejoin="round"/>
+    <rect x="67" y="53" width="29" height="10" rx="5" fill="#fff"/>
+    <rect x="67" y="69" width="21" height="10" rx="5" fill="#fff"/>
+    <circle cx="96" cy="34" r="8" fill="#f1eb35"/>
+  </symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-sum" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="19" cy="17" r="2.5"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+  <symbol id="i-lang" viewBox="0 0 24 24"><path d="M4 5h9M8.5 3v2M6 5c.5 3 2.5 5.5 5.5 7M11 5c-.8 3.5-3 6.5-6 8"/><path d="M13 21l4-9 4 9M14.5 18h5"/></symbol>
+</svg>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="#"><svg class="logo"><use href="#mark"/></svg>youyakun</a>
+    <nav>
+      <a href="#how">しくみ</a>
+      <a href="#features">できること</a>
+      <a href="#faq">よくある質問</a>
+      <a class="btn primary" href="#install">はじめる</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <span class="tag">ブラウザ拡張 ・ Chrome / Brave / Chromium</span>
+      <h1>その動画、<br><em>Claude Code</em> に聞いてみる。</h1>
+      <p class="lead">YouTube の字幕をまとめて取り出して、自分の Claude Code に渡すだけ。要約も、気になったところの質問も、動画の横でそのまま。</p>
+      <div class="cta">
+        <a class="btn primary" href="#install"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>はじめる</a>
+        <a class="btn ghost" href="#how">しくみを見る</a>
+      </div>
+      <p class="note">API キー不要 ・ いつもの Claude Code をそのまま使います</p>
+
+      <div class="stage" aria-hidden="true">
+        <div class="yt">
+          <div class="yt-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">youtube.com/watch?v=…</span></div>
+          <div class="yt-body">
+            <div>
+              <div class="player">
+                <div class="scene">朝の 30 分で変わる<br>集中力の作り方<small>第 2 章　光を浴びる</small></div>
+                <div class="ctl"><div class="prog"><b></b></div><div class="row"><svg viewBox="0 0 24 24" fill="#fff"><path d="M7 5l12 7-12 7z"/></svg><span>09:12 / 25:40</span></div></div>
+              </div>
+              <div class="vtitle">朝の 30 分で変わる、集中力の作り方｜脳科学でわかった 5 つの習慣</div>
+              <div class="vmeta"><span class="av"></span><span><b>まいにち脳科学ラボ</b><br>12万 回視聴</span></div>
+            </div>
+            <div class="yk">
+              <div class="head">
+                <span class="lg"></span><span class="title">youyakun</span>
+                <span class="ic"><svg><use href="#i-copy"/></svg></span>
+                <span class="ic"><svg><use href="#i-clock"/></svg></span>
+                <span class="pill"><svg><use href="#i-sum"/></svg>要約</span>
+                <span class="sep"></span>
+                <span class="ic"><svg><use href="#i-gear"/></svg></span>
+                <span class="ic"><svg><use href="#i-down"/></svg></span>
+              </div>
+              <div class="body">
+                <div class="tabs"><span class="tab on">チャット</span><span class="tab">字幕<span class="cnt">412</span></span></div>
+                <div class="sbar"><span class="pick"><svg><use href="#i-chat"/></svg><span>11/24 08:12 の会話</span></span><span class="ic"><svg><use href="#i-plus"/></svg></span></div>
+                <div class="chat">
+                  <div class="msg ai">
+                    <p><strong>全体の要点</strong></p>
+                    <ul>
+                      <li>起きて 1 時間以内に外の光を浴びると、日中の集中が続きやすい</li>
+                      <li>カフェインは起床 90 分後からがおすすめ</li>
+                      <li>最初の 25 分は、いちばん重い作業に使う</li>
+                    </ul>
+                    <h4><span class="ts">[03:40]</span> 起きてすぐスマホを見ない</h4>
+                    <p>通知を見ると、その日の優先順位が他人に決められてしまう…</p>
+                    <h4><span class="ts hl">[09:05]</span> 光を浴びる</h4>
+                    <p class="typing">曇りの日でも、屋外なら室内の何倍も明るい</p>
+                  </div>
+                </div>
+                <div class="composer">
+                  <div class="env"><span class="pick"><svg><use href="#i-server"/></svg><span>Pi（Tailscale）</span><svg class="chev"><use href="#i-chev"/></svg></span><span class="pick"><svg><use href="#i-folder"/></svg><span>youyakun 専用</span><svg class="chev"><use href="#i-chev"/></svg></span></div>
+                  <div class="ask"><span class="ph">この動画について質問（Enter で送信）</span><span class="ic primary"><svg><use href="#i-send"/></svg></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <span class="callout c1">時刻をクリックで、その場面へ</span>
+        <span class="callout c2">返答は少しずつ表示</span>
+      </div>
+    </div>
+  </div>
+
+  <section class="pain">
+    <div class="wrap">
+      <div class="sec-head"><span class="k">こんなこと、ありませんか</span><h2>見たい動画は多いのに、<br>時間が足りない。</h2></div>
+      <div class="pains">
+        <div>40 分の解説動画、要点だけ知りたい<small>倍速でも、全部見るのはしんどい</small></div>
+        <div>字幕をコピーして、AI に貼り付けている<small>文字起こしを開いて、選んで、貼って…</small></div>
+        <div>要約を読んだら、聞きたいことが出てきた<small>「その話、何分ごろ？」をまた探す</small></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <div class="sec-head"><span class="k">しくみ</span><h2>押すのは「要約」だけ</h2><p>字幕の取り出しから Claude Code に渡すところまで、youyakun がまとめてやります。</p></div>
+      <div class="steps">
+        <div class="step"><h3>動画を開く</h3><p>YouTube の動画ページの横に youyakun のパネルが出て、字幕を自動で読み込みます。</p></div>
+        <div class="step"><h3>「要約」を押す</h3><p>字幕と指示文を Claude Code に送ります。返答は届いたそばから少しずつ表示されます。</p></div>
+        <div class="step"><h3>続けて質問する</h3><p>同じ会話のまま、気になったところを聞けます。返答の時刻を押せば、その場面へ。</p></div>
+      </div>
+      <div class="flow">
+        <span class="node"><i style="background:#ffe3e3"><svg viewBox="0 0 24 24" fill="#e33"><path d="M8 5.5l11 6.5-11 6.5z"/></svg></i>YouTube のページ</span>
+        <span class="arr">→<small>字幕</small></span>
+        <span class="node"><i style="background:var(--accent-soft)"><svg viewBox="0 0 128 128"><use href="#mark"/></svg></i>youyakun</span>
+        <span class="arr">→<small>自分の PC / Pi</small></span>
+        <span class="node"><i style="background:#f6e9dc"><svg viewBox="0 0 24 24" fill="none" stroke="#c96a3a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5M12 19h8"/></svg></i>Claude Code</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen">
+    <div class="wrap screen-grid">
+      <div>
+        <span class="k">字幕タブ</span>
+        <h2>字幕を、読める形で。<br>ワンクリックでコピーも。</h2>
+        <p>動画を開くと、字幕を一覧で表示します。時刻を押せばその位置から再生。コピーすると先頭にタイトルと URL が付くので、どこに貼っても出どころが分かります。</p>
+        <ul class="checks">
+          <li>本文だけ／時刻つき、どちらでもコピー</li>
+          <li>字幕の言語を選べる（自動生成も）</li>
+          <li>YouTube の字幕の設定はそのまま</li>
+        </ul>
+      </div>
+      <div class="yk" aria-hidden="true">
+        <div class="head">
+          <span class="lg"></span><span class="title">youyakun</span>
+          <span class="ic"><svg><use href="#i-copy"/></svg></span>
+          <span class="ic"><svg><use href="#i-clock"/></svg></span>
+          <span class="pill"><svg><use href="#i-sum"/></svg>要約</span>
+          <span class="sep"></span>
+          <span class="ic"><svg><use href="#i-gear"/></svg></span>
+          <span class="ic"><svg><use href="#i-down"/></svg></span>
+        </div>
+        <div class="body">
+          <div class="tabs"><span class="tab">チャット</span><span class="tab on">字幕<span class="cnt">412</span></span></div>
+          <div class="sbar"><span class="pick"><svg><use href="#i-lang"/></svg><span>日本語（自動生成）</span><svg class="chev"><use href="#i-chev"/></svg></span></div>
+          <div class="segs">
+            <div class="seg ch"><span class="t">08:58</span>第 2 章　光を浴びる</div>
+            <div class="seg"><span class="t">09:01</span>じゃあ次は、光の話をしていきます</div>
+            <div class="seg on"><span class="t">09:05</span>起きてから 1 時間以内に外に出る</div>
+            <div class="seg"><span class="t">09:09</span>これだけで体内時計がリセットされて</div>
+            <div class="seg"><span class="t">09:13</span>夜も自然と眠くなるんですね</div>
+            <div class="seg"><span class="t">09:18</span>曇りの日でも、屋外なら室内の</div>
+            <div class="seg"><span class="t">09:21</span>何倍も明るいと言われています</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen">
+    <div class="wrap screen-grid rev">
+      <div class="yk" aria-hidden="true">
+        <div class="head">
+          <span class="lg"></span><span class="title">youyakun</span>
+          <span class="ic"><svg><use href="#i-copy"/></svg></span>
+          <span class="ic"><svg><use href="#i-clock"/></svg></span>
+          <span class="pill"><svg><use href="#i-sum"/></svg>要約</span>
+          <span class="sep"></span>
+          <span class="ic"><svg><use href="#i-gear"/></svg></span>
+          <span class="ic"><svg><use href="#i-down"/></svg></span>
+        </div>
+        <div class="body">
+          <div class="tabs"><span class="tab on">チャット</span><span class="tab">字幕<span class="cnt">412</span></span></div>
+          <div class="sbar"><span class="pick"><svg><use href="#i-chat"/></svg><span>11/24 08:12 の会話</span><svg class="chev"><use href="#i-chev"/></svg></span><span class="ic"><svg><use href="#i-plus"/></svg></span></div>
+          <div class="chat">
+            <div class="msg user">カフェインを遅らせる理由は？</div>
+            <div class="msg ai"><p><span class="ts">[14:22]</span> あたりで説明されています。起きた直後は眠気のもとになる物質がまだ残っていて、そこでカフェインを取ると、切れたころに強い眠気が戻りやすいから、という理由です。</p></div>
+            <div class="msg user">今日から試せることを 3 つだけ</div>
+            <div class="msg ai"><ul><li>起きたら 5 分だけ外に出る</li><li>コーヒーは 9 時半以降に</li><li>午前の最初の 25 分は通知を切る</li></ul></div>
+          </div>
+          <div class="composer">
+            <div class="env"><span class="pick"><svg><use href="#i-server"/></svg><span>Pi（Tailscale）</span><svg class="chev"><use href="#i-chev"/></svg></span><span class="pick"><svg><use href="#i-folder"/></svg><span>youyakun 専用</span><svg class="chev"><use href="#i-chev"/></svg></span></div>
+            <div class="ask"><span class="ph">この動画について質問（Enter で送信）</span><span class="ic primary"><svg><use href="#i-send"/></svg></span></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <span class="k">チャットタブ</span>
+        <h2>要約のあとも、<br>そのまま聞ける。</h2>
+        <p>2 通目からは同じ会話の続きとして送るので、前のやりとりを踏まえて答えます。会話は動画ごとに残るので、あとで開き直しても続きから。</p>
+        <ul class="checks">
+          <li>1 本の動画に、会話をいくつでも（20 件まで）</li>
+          <li>返答の途中でも止められる</li>
+          <li>ターミナルで続けるコマンドもコピーできる</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="sec-head"><span class="k">できること</span><h2>使うのは、自分の Claude Code</h2><p>字幕は外部の要約サービスを通らず、自分のマシンの Claude Code に直接届きます。</p></div>
+      <div class="feats">
+        <div class="feat"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="#0b7f86" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></div><h3>API キーはいらない</h3><p>いつもログインしている Claude Code をそのまま呼び出します。新しく契約するものはありません。</p></div>
+        <div class="feat"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="#0fb2bb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><h3>時刻から、その場面へ</h3><p>要約の見出しや答えに付く <code style="font-size:13px">[12:34]</code> を押すと、動画がその位置から再生されます。</p></div>
+        <div class="feat"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="#c9a40c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="19" cy="17" r="2.5"/></svg></div><h3>要約の指示は自由に</h3><p>「3 行で要点、次に見出しごと…」といった指示文は、設定画面で好きなように書き換えられます。</p></div>
+        <div class="feat"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="#0b7f86" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div><h3>作業フォルダを選べる</h3><p>選んだフォルダの <code style="font-size:13px">CLAUDE.md</code> を読み込んで答えます。プロジェクトに合わせた視点で要約できます。</p></div>
+        <div class="feat"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="#0fb2bb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg></div><h3>別のマシンにもつなげる</h3><p>Tailscale を使えば、Mac のブラウザから家の Raspberry Pi の Claude Code を呼べます。接続先はいくつでも登録できます。</p></div>
+        <div class="feat"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="#c9a40c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div><h3>Claude に道具は渡さない</h3><p>Claude Code はファイル操作やコマンド実行ができない状態で動きます。中継はトークンで守られます。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="install" id="install">
+    <div class="wrap">
+      <div class="sec-head"><span class="k">はじめかた</span><h2>3 ステップで準備完了</h2><p>Claude Code が動くマシンに小さな中継（ブリッジ）を入れて、ブラウザに拡張を読み込みます。</p></div>
+      <div class="ins">
+        <div><h3>ブリッジを入れる</h3><p>Claude Code が動くマシンで <code>bridge/install.sh</code> を実行。別のマシンのブラウザから使うなら <code>--tailscale</code> を付けます。最後にトークンが表示されます。</p></div>
+        <div><h3>拡張を読み込む</h3><p><code>chrome://extensions</code>（Brave は <code>brave://extensions</code>）で「デベロッパーモード」を ON にし、<code>extension</code> フォルダを読み込みます。</p></div>
+        <div><h3>接続先を登録</h3><p>youyakun のアイコンから設定画面を開き、ブリッジの URL とトークンを入れて「接続を確かめる」→「保存」。</p></div>
+      </div>
+      <div class="req"><span>Chrome / Brave / Chromium</span><span>Claude Code 2.1.259 以降</span><span>Python 3（ブリッジ用）</span><span>別マシンから使うなら Tailscale</span></div>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/tcaret2jp/youyakun" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .8.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.5 9.5 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.3 4.7-4.6 5 .4.3.7.9.7 1.9V21c0 .3.2.6.7.5A10 10 0 0 0 12 2z"/></svg>GitHub で入手</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <div class="sec-head"><span class="k">よくある質問</span><h2>気になるところ</h2></div>
+      <div class="faq">
+        <details><summary>Claude Code がないと使えませんか？</summary><p>はい。youyakun は、自分のマシンで動いている Claude Code に字幕を渡す拡張です。字幕のコピーだけなら、Claude Code なしでも使えます。</p></details>
+        <details><summary>API キーや追加の料金は必要ですか？</summary><p>API キーは使いません。いつも使っている Claude Code をそのまま呼び出すので、使った分はその Claude Code の利用分になります。</p></details>
+        <details><summary>字幕のない動画でも使えますか？</summary><p>使えません。YouTube の字幕（自動生成を含む）を読んでいるため、字幕がない動画は要約できません。</p></details>
+        <details><summary>ブリッジとは何ですか？</summary><p>ブラウザから届いた字幕と質問を Claude Code に中継する小さなプログラムです。Python の標準ライブラリだけで書かれていて、トークンを知っている相手からの依頼しか受け付けません。</p></details>
+        <details><summary>Claude にファイルを読まれたり、コマンドを実行されたりしませんか？</summary><p>しません。ブリッジは Claude Code に道具を一切渡さずに動かします（<code>--tools ""</code>）。作業フォルダで変わるのは、読み込まれる <code>CLAUDE.md</code> と会話の保存先だけです。</p></details>
+        <details><summary>会話の続きをターミナルでやりたい。</summary><p>パネルの「ターミナルで続けるコマンドをコピー」で、同じ会話を Claude Code の CLI から続けられます。</p></details>
+        <details><summary>アンインストールするには？</summary><p>拡張は <code>chrome://extensions</code> から削除します。ブリッジは <code>systemctl --user disable --now youyakun-bridge</code> で止められます。</p></details>
+      </div>
+    </div>
+  </section>
+
+  <div class="final">
+    <div class="wrap">
+      <svg class="logo"><use href="#mark"/></svg>
+      <h2>見る前に、まず聞いてみる。</h2>
+      <p>youyakun で、動画を自分の Claude Code と一緒に。</p>
+      <div class="cta"><a class="btn primary" href="#install"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>はじめる</a></div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 youyakun</span>
+    <a class="sp" href="https://github.com/tcaret2jp/youyakun" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</footer>
+
+</body>
+</html>

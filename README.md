@@ -9,6 +9,7 @@ YouTube の字幕を一括コピーし、そのまま Claude Code に渡して�
 - ブリッジを Pi に常駐済み（2026-11-24、`install.sh --tailscale`。127.0.0.1 と Pi の Tailscale IP の 8765 番）
 - 接続先（ブリッジ）を複数登録して切り替えられるようにした（設定画面と YouTube のパネルの両方から）
 - 作業フォルダを選べるようにした（v0.2）。アイコンを追加
+- LP を作成（2026-11-24、`lp/`。shimau の LP と同じ構成・Vercel 向け。まだ公開していない）
 - 拡張の字幕取得は**まだ実際の YouTube で試していない**（Pi から YouTube の API を叩くテストが自動モードで止められたため）
 
 ## しくみ
@@ -86,4 +87,5 @@ Mac など別のマシンのブラウザから Tailscale 経由で使うなら:
 - [x] Mac の Brave で字幕の自動読み込みを確認（2026-11-24、v0.4.1）
 - [ ] Mac の Brave → Pi のブリッジで「Claude で要約」まで通しで確認する
 - [x] アイコンを作る（Codex 作。`extension/icons/icon.svg` が原本）
+- [ ] LP を公開する（Vercel に `lp/` を置く。URL を `youyakun.vercel.app` 以外にしたら `og:url` / `og:image` を直す）。GitHub が非公開のままだと「GitHub で入手」ボタンが他の人には開けない
 - [ ] 必要なら「Remote Control のセッションとして開く」（スマホの Claude アプリで続ける）を追加
