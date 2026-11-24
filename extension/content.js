@@ -32,16 +32,23 @@
   button:disabled { opacity:.5; cursor:default; }
   .status { color:var(--sub); font-size:12px; white-space:pre-wrap; }
   .status.err { color:#cc0000; }
-  details.err summary { color:#cc0000; }
-  details { background:var(--bg2); border-radius:10px; padding:6px 10px; }
-  summary { cursor:pointer; color:var(--sub); font-size:13px; }
-  .segs { max-height:260px; overflow:auto; margin-top:6px; }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); }
+  .tab { font:inherit; font-size:13px; font-weight:500; background:none; border:0; color:var(--sub); cursor:pointer;
+         padding:6px 12px; border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tab.on { color:var(--ink); border-bottom-color:var(--accent); }
+  .tab .cnt { color:var(--sub); font-weight:400; margin-left:4px; font-size:12px; }
+  .pane { display:flex; flex-direction:column; gap:10px; }
+  .pane[hidden] { display:none; }
+  .tstatus { color:var(--sub); font-size:12px; white-space:pre-wrap; }
+  .tstatus.err { color:#cc0000; }
+  .segs { max-height:520px; overflow:auto; }
+  .empty { color:var(--sub); font-size:13px; padding:8px 0; }
   .seg { display:flex; gap:8px; padding:2px 0; }
   .seg.ch { font-weight:700; margin-top:6px; }
   .yk-ts { color:var(--accent); text-decoration:none; font-variant-numeric:tabular-nums; cursor:pointer; }
   .seg .yk-ts { flex:none; width:52px; }
   .chat { display:flex; flex-direction:column; gap:10px; max-height:520px; overflow:auto; }
-  .chat:empty { display:none; }
+  .chat:empty::before { content:"「Claude で要約」を押すか、下の欄から質問してください"; color:var(--sub); font-size:13px; }
   .msg { border-radius:10px; padding:8px 12px; overflow-wrap:anywhere; }
   .msg.user { background:var(--bg2); align-self:flex-end; max-width:85%; white-space:pre-wrap; }
   .msg.ai { border:1px solid var(--line); }
@@ -96,19 +103,29 @@
             <button class="btn primary sum">Claude で要約</button>
           </div>
           <div class="status"></div>
-          <details class="tview"><summary>字幕を見る</summary><div class="segs"></div></details>
-          <div class="chat"></div>
-          <div class="wd"><span>作業フォルダ</span><select class="dir"></select></div>
-          <div class="ask">
-            <textarea rows="1" placeholder="この動画について Claude に質問（Enter で送信、Shift+Enter で改行）"></textarea>
-            <button class="btn send">送信</button>
+          <div class="tabs">
+            <button class="tab on" data-tab="chat">チャット</button>
+            <button class="tab" data-tab="tr">字幕<span class="cnt"></span></button>
           </div>
-          <div class="sess"></div>
+          <div class="pane pane-chat">
+            <div class="chat"></div>
+            <div class="wd"><span>作業フォルダ</span><select class="dir"></select></div>
+            <div class="ask">
+              <textarea rows="1" placeholder="この動画について Claude に質問（Enter で送信、Shift+Enter で改行）"></textarea>
+              <button class="btn send">送信</button>
+            </div>
+            <div class="sess"></div>
+          </div>
+          <div class="pane pane-tr" hidden>
+            <div class="tstatus"></div>
+            <div class="segs"></div>
+          </div>
         </div>
       </div>`;
     const q = (s) => sh.querySelector(s);
     els = {
-      host, box: q(".yk"), lang: q(".lang"), prof: q(".prof"), status: q(".status"), segs: q(".segs"), tview: q(".tview"),
+      host, box: q(".yk"), lang: q(".lang"), prof: q(".prof"), status: q(".status"), segs: q(".segs"), tstatus: q(".tstatus"), cnt: q(".tab .cnt"),
+      tabs: [...sh.querySelectorAll(".tab")], paneChat: q(".pane-chat"), paneTr: q(".pane-tr"),
       chat: q(".chat"), input: q("textarea"), dir: q(".dir"), send: q(".send"), sess: q(".sess"),
       copy: q(".copy"), copyts: q(".copyts"), sum: q(".sum"), fold: q(".fold"), gear: q(".gear"),
     };
@@ -131,8 +148,12 @@
       state.pickDir = els.dir.value;
       store.set({ ["workdir:" + state.profileId]: state.pickDir });
     };
-    els.tview.addEventListener("toggle", () => { if (els.tview.open) loadTranscript(); });
-    els.lang.onchange = () => { state.trackIndex = Number(els.lang.value); state.transcript = null; loadTranscript(); };
+    for (const t of els.tabs) t.onclick = () => showTab(t.dataset.tab, true);
+    els.lang.onchange = () => {
+      state.trackIndex = Number(els.lang.value); state.transcript = null;
+      els.segs.innerHTML = ""; // 前の言語の行は消す
+      loadTranscript();
+    };
     els.input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); onSend(); }
     });
@@ -144,6 +165,7 @@
       const v = document.querySelector("video.html5-main-video, video");
       if (v) { v.currentTime = Number(a.dataset.t); v.play?.(); }
     });
+    store.get("tab").then(({ tab }) => { if (tab === "tr") showTab("tr"); });
     store.get("collapsed").then(({ collapsed }) => {
       if (collapsed) { els.box.classList.add("collapsed"); els.fold.textContent = "+"; }
     });
@@ -254,7 +276,7 @@
 
   // 表示中の接続先を、設定の「使用中」に合わせる。返答中は切り替えず、終わったときにもう一度呼ぶ
   async function syncProfile(announce = true) {
-    if (!els || !state) return;
+    if (!els || !state?.videoId) return;
     const p = await renderProfiles();
     if (state.busy) { els.prof.value = state.profileId; return; }
     if (p.id === state.profileId && (p.url || "") === state.profileUrl) return;
@@ -294,10 +316,22 @@
     }
   }
 
-  // 字幕の読み込み状態は「字幕を見る」の行に出す（Claude の返答中の表示を上書きしないため）
-  function setTStatus(text, err = false) {
-    els.tview.querySelector("summary").textContent = text;
-    els.tview.classList.toggle("err", err);
+  // チャット／字幕のタブ。字幕タブを開いたら（失敗していても）読み込み直す
+  function showTab(name, remember = false) {
+    for (const t of els.tabs) t.classList.toggle("on", t.dataset.tab === name);
+    els.paneChat.hidden = name !== "chat";
+    els.paneTr.hidden = name !== "tr";
+    if (name === "tr" && state?.videoId && !state.transcript) loadTranscript();
+    // 字幕タブを見ている間に届いた返答も、チャットに戻ったら末尾を見せる
+    if (name === "chat") els.chat.scrollTop = els.chat.scrollHeight;
+    if (remember) store.set({ tab: name });
+  }
+
+  // 字幕の読み込み状態は字幕タブに出す（Claude の返答中の表示を上書きしないため）
+  function setTStatus(text, err = false, count = "") {
+    els.tstatus.textContent = text;
+    els.tstatus.classList.toggle("err", err);
+    els.cnt.textContent = count;
   }
 
   // 言語が決まっていなければ先に決める（日本語を既定に）
@@ -331,12 +365,12 @@
       if (state !== st || st.trackIndex !== ti) return null;
       st.transcript = tr;
       const chars = tr.segments.reduce((a, x) => a + x.text.length, 0);
-      setTStatus(`字幕を見る（${tr.segments.length} 行・${chars.toLocaleString()} 文字・取得方法: ${tr.source}）`);
+      setTStatus(`${tr.segments.length} 行・${chars.toLocaleString()} 文字（取得方法: ${tr.source}）`, false, String(tr.segments.length));
       renderSegments();
       return tr;
     } catch (e) {
       if (state === st && st.trackIndex === ti) {
-        setTStatus("字幕を読み込めませんでした（開くと再試行）", true);
+        setTStatus(`字幕を読み込めませんでした（このタブを開き直すと再試行します）\n${e.message}`, true, "!");
         if (!st.busy) setStatus(e.message, true);
       }
       return null;
@@ -384,7 +418,9 @@
 
   // ---------- Claude ----------
   async function summarize() {
+    const st = state;
     const { promptTemplate } = await chrome.storage.local.get("promptTemplate");
+    if (state !== st || !st.videoId) return; // 待っている間に別の動画へ移った
     ask(promptTemplate || DEFAULT_PROMPT, "要約して");
   }
 
@@ -399,6 +435,7 @@
 
   async function ask(instruction, display) {
     if (state.busy) return;
+    showTab("chat");
     setBusy(true); // 字幕の読み込み中に二重に送られないよう、先に立てる
     const st = state;
     const id = st.videoId;
@@ -407,9 +444,10 @@
       // 最初の 1 通にだけ字幕を付ける。あとはセッションが覚えている
       setStatus("字幕を読み込んでいます…");
       if (!st.sessionId) await st.dirsReady; // 作業フォルダの一覧が届く前に送らない
+      if (state !== st) return false;
       const tr = await currentTranscript();
       if (state !== st) return false; // 別の動画へ移った
-      if (!tr) { setBusy(false); setStatus("字幕を取得できなかったので送れませんでした（「字幕を見る」を開くと再試行します）", true); return false; }
+      if (!tr) { setBusy(false); setStatus("字幕を取得できなかったので送れませんでした（「字幕」タブを開くと再試行します）", true); return false; }
       message = `${instruction}\n\n${contextBlock(tr)}`;
     }
     const resumeId = st.sessionId;
@@ -476,14 +514,14 @@
 
   async function mount() {
     const id = videoIdNow();
-    if (!id) { state?.stop?.(); state = null; root?.remove(); return; }
+    // 視聴ページ以外では「動画なし」の状態にする（null にすると、途中の処理が state を読んで落ちるため）
+    if (!id) { state?.stop?.(); state = resetState(null); root?.remove(); return; }
     if (!root) root = build();
-    if (!state || state.videoId !== id) {
+    if (!state || state.videoId !== id) {  // 新しい動画
       state?.stop?.();
       state = resetState(id);
       els.chat.innerHTML = ""; els.segs.innerHTML = ""; els.lang.innerHTML = ""; setStatus(""); setBusy(false);
-      els.tview.querySelector("summary").textContent = "字幕を見る";
-      els.tview.classList.remove("err");
+      setTStatus("");
       els.box.classList.toggle("dark", isDark());
       await syncProfile(false);
       // 動画を開いたら字幕も読み込んでおく（「字幕を見る」を開いたときにすぐ出るように）
