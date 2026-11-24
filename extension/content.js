@@ -32,6 +32,7 @@
   button:disabled { opacity:.5; cursor:default; }
   .status { color:var(--sub); font-size:12px; white-space:pre-wrap; }
   .status.err { color:#cc0000; }
+  details.err summary { color:#cc0000; }
   details { background:var(--bg2); border-radius:10px; padding:6px 10px; }
   summary { cursor:pointer; color:var(--sub); font-size:13px; }
   .segs { max-height:260px; overflow:auto; margin-top:6px; }
@@ -130,6 +131,7 @@
       state.pickDir = els.dir.value;
       store.set({ ["workdir:" + state.profileId]: state.pickDir });
     };
+    els.tview.addEventListener("toggle", () => { if (els.tview.open) loadTranscript(); });
     els.lang.onchange = () => { state.trackIndex = Number(els.lang.value); state.transcript = null; loadTranscript(); };
     els.input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); onSend(); }
@@ -292,36 +294,72 @@
     }
   }
 
+  // 字幕の読み込み状態は「字幕を見る」の行に出す（Claude の返答中の表示を上書きしないため）
+  function setTStatus(text, err = false) {
+    els.tview.querySelector("summary").textContent = text;
+    els.tview.classList.toggle("err", err);
+  }
+
+  // 言語が決まっていなければ先に決める（日本語を既定に）
+  async function ensureTrackIndex(st) {
+    if (st.trackIndex != null) return;
+    const info = await T.getInfo(st.videoId).catch(() => null);
+    if (state === st && st.trackIndex == null && info?.tracks.length) st.trackIndex = T.defaultTrackIndex(info.tracks);
+  }
+
+  // 今選ばれている言語の字幕を読む。同時に呼ばれても（自動読み込みとボタン）、取得は 1 回にまとめる
   async function loadTranscript() {
-    if (state.transcript) return state.transcript;
-    if (state.trackIndex == null) {
-      // 言語の一覧がまだなら先に読み、日本語を既定にする（待っている間に動画が変わったら使わない）
-      const vid = state.videoId;
-      const info = await T.getInfo(vid).catch(() => null);
-      if (state.videoId !== vid) return null;
-      if (info?.tracks.length && state.trackIndex == null) state.trackIndex = T.defaultTrackIndex(info.tracks);
+    const st = state;
+    if (st.transcript) return st.transcript;
+    await ensureTrackIndex(st);
+    if (state !== st) return null;
+    if (st.transcript) return st.transcript;
+    const ti = st.trackIndex;
+    const key = String(ti);
+    if (st.loading?.key !== key) {
+      const p = loadTranscriptNow(st, ti).finally(() => { if (st.loading?.p === p) st.loading = null; });
+      st.loading = { key, p };
     }
-    const id = state.videoId, ti = state.trackIndex;
-    setStatus("字幕を読み込んでいます…");
+    return st.loading.p;
+  }
+
+  async function loadTranscriptNow(st, ti) {
+    setTStatus("字幕を読み込んでいます…");
     try {
-      const tr = await T.getTranscript(id, ti);
-      // 待っている間に動画や言語が変わったら、古い結果は捨てる
-      if (state.videoId !== id || state.trackIndex !== ti) return null;
-      state.transcript = tr;
-      const chars = tr.segments.reduce((a, s) => a + s.text.length, 0);
-      setStatus(`字幕 ${tr.segments.length} 行・${chars.toLocaleString()} 文字（取得方法: ${tr.source}）`);
-      els.tview.querySelector("summary").textContent = `字幕を見る（${tr.segments.length} 行）`;
+      const tr = await T.getTranscript(st.videoId, ti);
+      // 待っている間に動画や言語が変わったら、古い結果は捨てる（表示も触らない）
+      if (state !== st || st.trackIndex !== ti) return null;
+      st.transcript = tr;
+      const chars = tr.segments.reduce((a, x) => a + x.text.length, 0);
+      setTStatus(`字幕を見る（${tr.segments.length} 行・${chars.toLocaleString()} 文字・取得方法: ${tr.source}）`);
       renderSegments();
       return tr;
     } catch (e) {
-      if (state.videoId === id) setStatus(e.message, true);
+      if (state === st && st.trackIndex === ti) {
+        setTStatus("字幕を読み込めませんでした（開くと再試行）", true);
+        if (!st.busy) setStatus(e.message, true);
+      }
       return null;
     }
   }
 
+  // ボタン操作用：途中で言語が変わったら、新しい言語の字幕を待ち直す
+  async function currentTranscript() {
+    const st = state;
+    for (let i = 0; i < 4; i++) {
+      const ti = st.trackIndex;
+      const tr = await loadTranscript();
+      if (state !== st) return null;
+      if (tr && st.trackIndex === ti) return tr;
+      if (st.trackIndex === ti) return null; // 本当に取れなかった
+    }
+    return null;
+  }
+
   async function copy(timestamps) {
-    const tr = await loadTranscript();
-    if (!tr) return;
+    const st = state;
+    const tr = await currentTranscript();
+    if (!tr || state !== st) return;
     const header = `${tr.title}\n${location.origin}/watch?v=${tr.videoId}\n\n`;
     await navigator.clipboard.writeText(header + T.toText(tr.segments, { timestamps }));
     setStatus(`コピーしました（${timestamps ? "時刻つき" : "本文のみ"}・${tr.segments.length} 行）`);
@@ -355,23 +393,26 @@
     const text = els.input.value.trim();
     if (!text) return;
     els.input.value = "";
-    ask(text, text);
+    // 送れなかったとき（字幕が取れないなど）は、入力を戻す
+    ask(text, text).then((ok) => { if (ok === false && !els.input.value) els.input.value = text; });
   }
 
   async function ask(instruction, display) {
     if (state.busy) return;
     setBusy(true); // 字幕の読み込み中に二重に送られないよう、先に立てる
-    const id = state.videoId;
+    const st = state;
+    const id = st.videoId;
     let message = instruction;
-    if (!state.sessionId) {
+    if (!st.sessionId) {
       // 最初の 1 通にだけ字幕を付ける。あとはセッションが覚えている
-      const tr = await loadTranscript();
-      if (!tr || state.videoId !== id) { if (state.videoId === id) setBusy(false); return; }
+      setStatus("字幕を読み込んでいます…");
+      if (!st.sessionId) await st.dirsReady; // 作業フォルダの一覧が届く前に送らない
+      const tr = await currentTranscript();
+      if (state !== st) return false; // 別の動画へ移った
+      if (!tr) { setBusy(false); setStatus("字幕を取得できなかったので送れませんでした（「字幕を見る」を開くと再試行します）", true); return false; }
       message = `${instruction}\n\n${contextBlock(tr)}`;
     }
-    const resumeId = state.sessionId;
-    if (!resumeId) await state.dirsReady; // 作業フォルダの一覧が届く前に送らない
-    if (state.videoId !== id) return;
+    const resumeId = st.sessionId;
     let newId = "";
     state.messages.push({ role: "user", text: instruction, display });
     const ai = { role: "ai", text: "" };
@@ -435,16 +476,18 @@
 
   async function mount() {
     const id = videoIdNow();
-    if (!id) { state?.stop?.(); root?.remove(); return; }
+    if (!id) { state?.stop?.(); state = null; root?.remove(); return; }
     if (!root) root = build();
     if (!state || state.videoId !== id) {
       state?.stop?.();
       state = resetState(id);
       els.chat.innerHTML = ""; els.segs.innerHTML = ""; els.lang.innerHTML = ""; setStatus(""); setBusy(false);
       els.tview.querySelector("summary").textContent = "字幕を見る";
+      els.tview.classList.remove("err");
       els.box.classList.toggle("dark", isDark());
       await syncProfile(false);
-      loadInfo();
+      // 動画を開いたら字幕も読み込んでおく（「字幕を見る」を開いたときにすぐ出るように）
+      loadInfo().then(() => { if (state.videoId === id) loadTranscript(); });
     }
     for (let i = 0; i < 40 && videoIdNow() === id; i++) {
       const slot = findSlot();
