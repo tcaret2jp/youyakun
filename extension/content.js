@@ -19,9 +19,16 @@
   .yk.dark { --accent:#0fb2bb; --accent-ink:#0b1416; --bg:#0f0f0f; --bg2:#272727; --ink:#f1f1f1; --sub:#aaa; --line:#3f3f3f; }
   .head { display:flex; align-items:center; gap:8px; padding:10px 14px; }
   .logo { width:12px; height:12px; border-radius:50%; background:var(--accent); box-shadow: 8px 0 0 #f1eb35; margin-right:10px; }
-  .title { font-weight:700; flex:1; }
+  .title { font-weight:700; flex:1; min-width:0; }
+  .head { gap:4px !important; }
   select, .icon { font:inherit; color:var(--ink); background:var(--bg2); border:0; border-radius:10px; padding:4px 8px; cursor:pointer; }
-  .icon { width:30px; height:30px; padding:0; border-radius:50%; }
+  .icon { width:30px; height:30px; padding:0; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; flex:none; }
+  .icon.primary { background:var(--accent); color:var(--accent-ink); }
+  .icon:hover:not(:disabled) { filter:brightness(.93); }
+  .env, .trbar { display:flex; gap:6px; }
+  .pick { display:flex; align-items:center; gap:4px; flex:1; min-width:0; background:var(--bg2); border-radius:10px; padding:0 0 0 8px; color:var(--sub); }
+  .pick select { flex:1; min-width:0; font-size:12px; background:transparent; padding:5px 6px 5px 2px; }
+  .pick select:disabled { opacity:.6; }
   .body { padding:0 14px 14px; display:flex; flex-direction:column; gap:10px; }
   .collapsed .body { display:none; }
   .row { display:flex; flex-wrap:wrap; gap:8px; }
@@ -61,14 +68,29 @@
   .sbar { display:flex; gap:8px; align-items:center; }
   .sbar select { flex:1; min-width:0; font-size:12px; }
   button.small { padding:4px 12px; font-size:12px; }
-  .wd { display:flex; gap:8px; align-items:center; color:var(--sub); font-size:12px; }
-  .wd select { flex:1; min-width:0; font-size:12px; }
   .ask { display:flex; gap:8px; align-items:flex-end; }
   textarea { flex:1; font:inherit; color:var(--ink); background:var(--bg2); border:0; border-radius:10px; padding:8px 10px; resize:vertical; min-height:38px; max-height:200px; }
   .sess { display:flex; flex-wrap:wrap; gap:8px; align-items:center; color:var(--sub); font-size:12px; }
   .sess:empty { display:none; }
   .link { background:none; border:0; color:var(--accent); cursor:pointer; font:inherit; padding:0; }
   `;
+
+  // パネルのアイコン（線のみ・currentColor）
+  const svg = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const ICON = {
+    copy: svg('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
+    clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+    summary: svg('<path d="M4 6h16M4 12h10M4 18h7"/><circle cx="19" cy="17" r="2.5"/>'),
+    gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+    down: svg('<path d="M6 15l6-6 6 6"/>'),
+    up: svg('<path d="M6 9l6 6 6-6"/>'),
+    server: svg('<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>'),
+    folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+    plus: svg('<path d="M12 5v14M5 12h14"/>'),
+    send: svg('<path d="M12 19V5M5 12l7-7 7 7"/>'),
+    stop: svg('<rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/>'),
+    lang: svg('<path d="M4 5h9M8.5 3v2M6 5c.5 3 2.5 5.5 5.5 7M11 5c-.8 3.5-3 6.5-6 8"/><path d="M13 21l4-9 4 9M14.5 18h5"/>'),
+  };
 
   let root, els, state;
   const resetState = (videoId) => ({
@@ -95,16 +117,16 @@
       <div class="yk">
         <div class="head">
           <span class="logo"></span><span class="title">youyakun</span>
-          <select class="prof" title="接続先（Claude Code が動くマシン）"></select>
-          <select class="lang" title="字幕の言語"></select>
-          <button class="icon gear" title="設定">⚙</button>
-          <button class="icon fold" title="たたむ">–</button>
+          <button class="icon copy" title="字幕をコピー">${ICON.copy}</button>
+          <button class="icon copyts" title="時刻つきで字幕をコピー">${ICON.clock}</button>
+          <button class="icon primary sum" title="Claude で要約">${ICON.summary}</button>
+          <button class="icon gear" title="設定">${ICON.gear}</button>
+          <button class="icon fold" title="たたむ">${ICON.down}</button>
         </div>
         <div class="body">
-          <div class="row">
-            <button class="btn copy">字幕をコピー</button>
-            <button class="btn copyts">時刻つきでコピー</button>
-            <button class="btn primary sum">Claude で要約</button>
+          <div class="env">
+            <label class="pick" title="接続先（Claude Code が動くマシン）">${ICON.server}<select class="prof"></select></label>
+            <label class="pick" title="作業フォルダ（Claude Code を動かすフォルダ。その CLAUDE.md が読み込まれます）">${ICON.folder}<select class="dir"></select></label>
           </div>
           <div class="status"></div>
           <div class="tabs">
@@ -114,17 +136,19 @@
           <div class="pane pane-chat">
             <div class="sbar">
               <select class="ssel" title="この動画での会話"></select>
-              <button class="btn small snew">＋ 新しい会話</button>
+              <button class="icon snew" title="新しい会話">${ICON.plus}</button>
             </div>
             <div class="chat"></div>
-            <div class="wd"><span>作業フォルダ</span><select class="dir"></select></div>
             <div class="ask">
-              <textarea rows="1" placeholder="この動画について Claude に質問（Enter で送信、Shift+Enter で改行）"></textarea>
-              <button class="btn send">送信</button>
+              <textarea rows="1" placeholder="この動画について質問（Enter で送信）"></textarea>
+              <button class="icon primary send" title="送信">${ICON.send}</button>
             </div>
             <div class="sess"></div>
           </div>
           <div class="pane pane-tr" hidden>
+            <div class="trbar">
+              <label class="pick" title="字幕の言語">${ICON.lang}<select class="lang"></select></label>
+            </div>
             <div class="tstatus"></div>
             <div class="segs"></div>
           </div>
@@ -144,19 +168,33 @@
     els.gear.onclick = () => chrome.runtime.sendMessage({ type: "openOptions" });
     els.fold.onclick = () => {
       const c = els.box.classList.toggle("collapsed");
-      els.fold.textContent = c ? "+" : "–";
+      els.fold.innerHTML = c ? ICON.up : ICON.down;
+      els.fold.title = c ? "ひらく" : "たたむ";
       store.set({ collapsed: c });
     };
     els.prof.onchange = () => {
-      if (state.busy) { els.prof.value = state.profileId; return; }
-      PR.setActive(els.prof.value); // storage.onChanged で切り替わる
+      if (els.prof.value === "__add") { // 設定画面を開く
+        els.prof.value = [...els.prof.options].some((o) => o.value === state.profileId) ? state.profileId : "";
+        chrome.runtime.sendMessage({ type: "openOptions" });
+        return;
+      }
+      if (state.busy || !state.videoId) { els.prof.value = state.profileId; return; }
+      state.switching = true; // 切り替えが反映されるまで送信しない
+      setBusyControls();
+      PR.setActive(els.prof.value).then(() => syncProfile()); // 反映して、会話とフォルダを読み直す
     };
     els.snew.onclick = () => newConversation();
     els.ssel.onchange = () => switchSession(els.ssel.value);
     els.dir.onchange = () => {
-      if (state.sessionId || state.busy) return;
+      if (state.busy || state.loadingSaved || state.dirsLoading || state.switching || !state.videoId) { renderDirs(); return; }
       state.pickDir = els.dir.value;
       store.set({ ["workdir:" + state.profileId]: state.pickDir });
+      // 会話の途中でフォルダを変えたら、そのフォルダで新しい会話にする（セッションはフォルダごとに保存されるため）
+      if (state.sessionId && state.workdir !== state.pickDir) {
+        useEntry(null);
+        save();
+        setStatus("作業フォルダを変えたので、新しい会話にしました（前の会話はメニューから戻れます）");
+      }
     };
     for (const t of els.tabs) t.onclick = () => showTab(t.dataset.tab, true);
     els.lang.onchange = () => {
@@ -177,7 +215,7 @@
     });
     store.get("tab").then(({ tab }) => { if (tab === "tr") showTab("tr"); });
     store.get("collapsed").then(({ collapsed }) => {
-      if (collapsed) { els.box.classList.add("collapsed"); els.fold.textContent = "+"; }
+      if (collapsed) { els.box.classList.add("collapsed"); els.fold.innerHTML = ICON.up; els.fold.title = "ひらく"; }
     });
     return host;
   }
@@ -187,11 +225,21 @@
     els.status.classList.toggle("err", err);
   }
 
+  // 返答中・切り替え中に触れないものを止める
+  function setBusyControls() {
+    if (!els || !state) return;
+    const lock = !!(state.busy || state.switching);
+    els.prof.disabled = lock;
+    els.dir.disabled = lock || !!(state.loadingSaved || state.dirsLoading);
+    els.sum.disabled = lock;
+  }
+
   function setBusy(b) {
     state.busy = b;
     els.sum.disabled = b;
-    els.send.textContent = b ? "停止" : "送信";
-    if (els.dir) els.dir.disabled = b || !!state.sessionId;
+    els.send.innerHTML = b ? ICON.stop : ICON.send;
+    els.send.title = b ? "止める" : "送信";
+    setBusyControls();
     if (els.ssel) { els.ssel.disabled = b || els.ssel.options.length < 2; els.snew.disabled = b || !state.sessionId; }
     if (!b) { renderDirs(); syncProfile(false); } // 返答中に切り替えられていたら、ここで反映する
   }
@@ -267,9 +315,10 @@
 
   async function renderProfiles() {
     const { profiles, activeProfile } = await PR.load();
-    els.prof.innerHTML = profiles.map((p) => `<option value="${MD.esc(p.id)}">${MD.esc(p.name || "（名前なし）")}</option>`).join("");
-    els.prof.value = activeProfile;
-    els.prof.hidden = profiles.length < 2; // 1 件だけなら出さない
+    els.prof.innerHTML = profiles.map((p) => `<option value="${MD.esc(p.id)}">${MD.esc(p.name || "（名前なし）")}</option>`).join("")
+      + (profiles.length ? "" : `<option value="">接続先が未設定です</option>`)
+      + `<option value="__add">＋ 接続先を追加・編集…</option>`;
+    els.prof.value = profiles.some((p) => p.id === activeProfile) ? activeProfile : "";
     return profiles.find((p) => p.id === activeProfile) || { id: "", url: "" };
   }
 
@@ -309,11 +358,15 @@
     const want = locked ? state.workdir : state.pickDir;
     const opts = dirs.slice();
     if (want && !opts.some((d) => d.path === want)) opts.push({ name: want, path: want });
+    // 作業フォルダを記録していない古い会話：ブリッジが覚えているフォルダで続ける
+    if (locked && !want) opts.unshift({ name: "この会話のフォルダ（記録なし）", path: "" });
     if (!opts.length) opts.push({ name: "既定（youyakun 専用）", path: "" });
     els.dir.innerHTML = opts.map((d) => `<option value="${MD.esc(d.path)}">${MD.esc(d.name)}</option>`).join("");
-    els.dir.value = want && opts.some((d) => d.path === want) ? want : opts[0].path;
-    els.dir.disabled = locked || state.busy;
-    els.dir.title = locked ? "会話中は変えられません。「新しい会話にする」と選べます" : "Claude Code を動かすフォルダ（その CLAUDE.md が読み込まれます）";
+    els.dir.value = opts.some((d) => d.path === want) ? want : opts[0].path;
+    els.dir.disabled = !!(state.busy || state.loadingSaved || state.dirsLoading || state.switching);
+    els.dir.title = locked
+      ? "この会話の作業フォルダ。変えると、そのフォルダで新しい会話になります"
+      : "Claude Code を動かすフォルダ（その CLAUDE.md が読み込まれます）";
   }
 
   function loadDirs() {
@@ -324,6 +377,8 @@
 
   async function loadDirsNow() {
     const st = state;
+    st.dirsLoading = true;
+    renderDirs();
     const pid = state.profileId, purl = state.profileUrl;
     state.dirs = []; state.pickDir = ""; // 前の接続先の選択を持ち越さない
     const [r, picked] = await Promise.all([
@@ -331,6 +386,7 @@
       store.get("workdir:" + pid),
     ]);
     if (state !== st || st.profileId !== pid || st.profileUrl !== purl) return; // 古い読み込み結果は使わない
+    st.dirsLoading = false;
     state.dirs = r?.ok ? r.workdirs : [];
     const p = picked["workdir:" + pid] || "";
     state.pickDir = state.dirs.some((d) => d.path === p) ? p : state.dirs[0]?.path || "";
@@ -342,11 +398,17 @@
     if (!els || !state?.videoId) return;
     const p = await renderProfiles();
     if (state.busy) { els.prof.value = state.profileId; return; }
-    if (p.id === state.profileId && (p.url || "") === state.profileUrl) return;
-    state.profileId = p.id;
-    state.profileUrl = p.url || "";
+    const st = state;
+    if (p.id === st.profileId && (p.url || "") === st.profileUrl) { st.switching = false; setBusyControls(); return; }
+    st.profileId = p.id;
+    st.profileUrl = p.url || "";
+    st.dirs = []; st.pickDir = ""; renderDirs(); // 前の接続先のフォルダ候補は消す
+    const dirsDone = loadDirs();
     await loadSaved();
-    loadDirs();
+    await dirsDone;
+    if (state !== st) return;
+    st.switching = false;
+    setBusyControls();
     if (announce) setStatus(`接続先を「${els.prof.selectedOptions[0]?.textContent || ""}」にしました`);
   }
 
@@ -458,7 +520,7 @@
     } catch (e) {
       if (state === st && st.trackIndex === ti) {
         setTStatus(`字幕を読み込めませんでした（このタブを開き直すと再試行します）\n${e.message}`, true, "!");
-        if (!st.busy) setStatus(e.message, true);
+        if (!st.busy) setStatus("字幕を読み込めませんでした（詳しくは「字幕」タブ）", true);
       }
       return null;
     }
@@ -523,19 +585,22 @@
   }
 
   async function ask(instruction, display) {
-    if (state.busy || state.loadingSaved || !state.videoId) return false;
+    if (state.busy || state.loadingSaved || state.switching || !state.videoId) return false;
     showTab("chat");
     setBusy(true); // 字幕の読み込み中に二重に送られないよう、先に立てる
     const st = state;
+    // 送る準備（フォルダ一覧・字幕）の間に「止める」が押されたら、送らずに終える
+    let cancelled = false;
+    st.stop = () => { cancelled = true; if (state === st) { setBusy(false); setStatus("止めました"); } };
     const id = st.videoId;
     let message = instruction;
     if (!st.sessionId) {
       // 最初の 1 通にだけ字幕を付ける。あとはセッションが覚えている
       setStatus("字幕を読み込んでいます…");
       if (!st.sessionId) await st.dirsReady; // 作業フォルダの一覧が届く前に送らない
-      if (state !== st) return false;
+      if (state !== st || cancelled) return false;
       const tr = await currentTranscript();
-      if (state !== st) return false; // 別の動画へ移った
+      if (state !== st || cancelled) return false; // 別の動画へ移った／止めた
       if (!tr) { setBusy(false); setStatus("字幕を取得できなかったので送れませんでした（「字幕」タブを開くと再試行します）", true); return false; }
       message = `${instruction}\n\n${contextBlock(tr)}`;
     }
